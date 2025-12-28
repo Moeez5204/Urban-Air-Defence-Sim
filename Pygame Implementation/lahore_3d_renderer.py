@@ -20,6 +20,16 @@ except ImportError:
     GOOD_DRONES_AVAILABLE = False
     print("Note: Good drone controller not available")
 
+# Try to import bad drone controller
+try:
+    from bad_drone_controller import BadDroneController, EnemyDrone3D
+
+    BAD_DRONES_AVAILABLE = True
+    print("✓ Bad drone controller available")
+except ImportError:
+    BAD_DRONES_AVAILABLE = False
+    print("Note: Bad drone controller not available")
+
 
 class Lahore3DRenderer:
     """OpenGL renderer for Lahore 3D model with good drone defense system"""
@@ -68,8 +78,9 @@ class Lahore3DRenderer:
         self.show_axes = True
         self.show_good_drones = True
 
-        # Good drone defense system
+        # Drone systems
         self.good_drone_controller = None
+        self.bad_drone_controller = None
 
         # Animation
         self.animation_time = 0
@@ -88,20 +99,48 @@ class Lahore3DRenderer:
 
         print("✓ 3D Renderer initialized")
 
-    def initialize_good_drones(self, num_drones=8):
+    def initialize_good_drones(self, num_drones=4):
         """Initialize the good drone defense system"""
         if not GOOD_DRONES_AVAILABLE:
             print("⚠ Good drone controller not available.")
             return False
 
         try:
-            # Create controller
+            # Create controllers
             self.good_drone_controller = GoodDroneController()
+
+            # Create bad drones if available
+            if BAD_DRONES_AVAILABLE:
+                self.bad_drone_controller = BadDroneController()
+                enemies = self.bad_drone_controller.generate_enemies(num_enemies=6)  # More enemies!
+            else:
+                # Fallback - create simple enemies
+                print("⚠ Bad drone controller not available. Creating simple enemies...")
+                enemies = []
+                for i in range(4):
+                    enemies.append(EnemyDrone3D(
+                        id=f"Enemy_{i:02d}",
+                        position=(random.uniform(-500, 500),
+                                  random.uniform(-500, 500),
+                                  random.uniform(100, 300)),
+                        velocity=(random.uniform(-0.3, 0.3),
+                                  random.uniform(-0.3, 0.3),
+                                  random.uniform(-0.1, 0.1)),
+                        color=(1.0, 0.0, 0.0),
+                        size=8.0
+                    ))
+
+            # Set enemies for good drone controller
+            self.good_drone_controller.set_enemies(enemies)
+
+            # Initialize good drones
             drones = self.good_drone_controller.initialize_drones(num_drones=num_drones)
 
             if drones:
-                print(f"✓ {len(drones)} drones initialized")
+                print(f"✓ {len(drones)} good drones initialized")
+                print(f"✓ {len(enemies)} enemy drones initialized")
                 print("✓ Press 'M' for ASDA/LSTM report")
+                print("✓ Press 'D' to toggle drone visibility")
                 return True
             else:
                 print("⚠ No drones initialized")
@@ -132,7 +171,7 @@ class Lahore3DRenderer:
                     self.show_buildings = not self.show_buildings
                 elif event.key == pygame.K_c:
                     self.show_canyons = not self.show_canyons
-                elif event.type == pygame.K_t:
+                elif event.key == pygame.K_t:
                     self.show_threats = not self.show_threats
                 elif event.key == pygame.K_a:
                     self.show_assets = not self.show_assets
@@ -204,8 +243,15 @@ class Lahore3DRenderer:
 
         controller = self.good_drone_controller
 
-        # Get sector threats
-        threat_positions = [e.position for e in controller.enemies] if hasattr(controller, 'enemies') else []
+        # Get enemies
+        enemies = []
+        if self.bad_drone_controller:
+            enemies = self.bad_drone_controller.enemies
+        elif controller.enemies:
+            enemies = controller.enemies
+
+        threat_positions = [e.position for e in enemies] if enemies else []
+
         if hasattr(controller.adaptive_sector, '_update_threats'):
             controller.adaptive_sector._update_threats(threat_positions)
 
@@ -264,7 +310,7 @@ class Lahore3DRenderer:
         print("\nSYSTEM SUMMARY:")
         print("-" * 55)
         print(f"Total Drones: {len(controller.drones)}")
-        print(f"Total Threats: {len(controller.enemies) if hasattr(controller, 'enemies') else 0}")
+        print(f"Total Threats: {len(enemies)}")
         print(f"Active Sectors: {len([s for s in sector_drone_counts if sector_drone_counts[s] > 0])}")
 
         # Calculate defense coverage
@@ -434,23 +480,24 @@ class Lahore3DRenderer:
 
         glPopMatrix()
 
-    def render_canyon(self, canyon: Canyon3D):
-        """Render a single canyon"""
+    def render_canyon(self, canyon: Canyon3D, model: Lahore3DModel = None):
+        """Render a single canyon - FIXED TO PREVENT DOUBLE RENDERING"""
         if not self.show_canyons or len(canyon.centerline) < 2:
             return
 
         glPushMatrix()
 
-        # Bright colors based on threat level
+        # Set up proper blending for canyons
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+        # Bright colors based on threat level WITH ALPHA TRANSPARENCY
         if canyon.threat_level == 'high':
-            main_color = (1.0, 0.3, 0.3)  # Bright red
-            edge_color = (1.0, 0.0, 0.0)  # Darker red edges
+            main_color = (1.0, 0.3, 0.3, 0.7)  # Semi-transparent red
         elif canyon.threat_level == 'medium':
-            main_color = (1.0, 0.7, 0.3)  # Bright orange
-            edge_color = (1.0, 0.5, 0.0)  # Darker orange edges
+            main_color = (1.0, 0.7, 0.3, 0.7)  # Semi-transparent orange
         else:
-            main_color = (0.3, 1.0, 0.3)  # Bright green
-            edge_color = (0.0, 1.0, 0.0)  # Darker green edges
+            main_color = (0.3, 1.0, 0.3, 0.7)  # Semi-transparent green
 
         # Draw canyon as extruded shape
         for i in range(len(canyon.centerline) - 1):
@@ -467,9 +514,9 @@ class Lahore3DRenderer:
             perp_x = -dy / length * canyon.width / 2
             perp_y = dx / length * canyon.width / 2
 
-            # Main canyon body (solid)
+            # Main canyon body
             glDisable(GL_LIGHTING)
-            glColor3f(*main_color)
+            glColor4f(*main_color)
             glBegin(GL_QUADS)
 
             # Top face
@@ -483,10 +530,23 @@ class Lahore3DRenderer:
             glVertex3f(start[0] + perp_x, start[1] + perp_y, start[2])
             glVertex3f(end[0] + perp_x, end[1] + perp_y, end[2])
             glVertex3f(end[0] - perp_x, end[1] - perp_y, end[2])
+
+            # Side faces for better 3D effect
+            glVertex3f(start[0] - perp_x, start[1] - perp_y, start[2])
+            glVertex3f(start[0] - perp_x, start[1] - perp_y, start[2] + canyon.depth)
+            glVertex3f(end[0] - perp_x, end[1] - perp_y, end[2] + canyon.depth)
+            glVertex3f(end[0] - perp_x, end[1] - perp_y, end[2])
+
+            glVertex3f(start[0] + perp_x, start[1] + perp_y, start[2])
+            glVertex3f(start[0] + perp_x, start[1] + perp_y, start[2] + canyon.depth)
+            glVertex3f(end[0] + perp_x, end[1] + perp_y, end[2] + canyon.depth)
+            glVertex3f(end[0] + perp_x, end[1] + perp_y, end[2])
+
             glEnd()
 
             glEnable(GL_LIGHTING)
 
+        glDisable(GL_BLEND)
         glPopMatrix()
 
     def render_threat(self, threat: Threat3D):
@@ -619,64 +679,89 @@ class Lahore3DRenderer:
         glMatrixMode(GL_MODELVIEW)
         glPopAttrib()
 
-    def update_threats(self, model: Lahore3DModel, delta_time: float):
-        """Update threat positions for animation"""
-        current_time = time.time()
-        if current_time - self.last_threat_update > self.threat_update_interval:
-            # Get city bounds from model
-            city_min_x = model.min_x if model.min_x < model.max_x else -600
-            city_max_x = model.max_x if model.max_x > model.min_x else 600
-            city_min_y = model.min_y if model.min_y < model.max_y else -600
-            city_max_y = model.max_y if model.max_y > model.min_y else 600
+    def update_enemies(self, delta_time: float):
+        """Update enemy drone positions with consistent speed"""
+        if self.bad_drone_controller:
+            # Update bad drones
+            self.bad_drone_controller.update_enemies(delta_time)
 
-            # Add buffer to bounds
-            buffer = 50
-            city_min_x -= buffer
-            city_max_x += buffer
-            city_min_y -= buffer
-            city_max_y += buffer
+            # Update good drone controller with new enemy positions
+            if self.good_drone_controller:
+                self.good_drone_controller.enemies = self.bad_drone_controller.enemies
+        elif self.good_drone_controller and self.good_drone_controller.enemies:
+            # Fallback - update enemies with proper speed calculation
+            for enemy in self.good_drone_controller.enemies:
+                x, y, z = enemy.position
+                vx, vy, vz = enemy.velocity
 
-            for threat in model.threats:
-                # Update position based on velocity
-                x, y, z = threat.position
-                vx, vy, vz = threat.velocity
+                # MATCH: position += velocity * delta_time
+                new_x = x + vx * delta_time
+                new_y = y + vy * delta_time
+                new_z = z + vz * delta_time
 
-                # Calculate new position
-                new_x = x + vx * 20
-                new_y = y + vy * 20
-                new_z = max(50, min(z + vz * 20, 300))
-
-                # Boundary checking and bouncing
-                bounce_factor = 0.8
-
-                # X boundary
-                if new_x < city_min_x or new_x > city_max_x:
-                    vx = -vx * bounce_factor
-                    new_x = max(city_min_x, min(new_x, city_max_x))
-
-                # Y boundary
-                if new_y < city_min_y or new_y > city_max_y:
-                    vy = -vy * bounce_factor
-                    new_y = max(city_min_y, min(new_y, city_max_y))
-
-                # Z boundary (altitude)
+                # Simple boundary check
+                if new_x < -600 or new_x > 600:
+                    vx = -vx * 0.8
+                if new_y < -600 or new_y > 600:
+                    vy = -vy * 0.8
                 if new_z < 30 or new_z > 400:
-                    vz = -vz * bounce_factor
-                    new_z = max(30, min(new_z, 400))
+                    vz = -vz * 0.8
 
-                # Update threat properties
-                threat.position = (new_x, new_y, new_z)
-                threat.velocity = (vx, vy, vz)
+                enemy.position = (new_x, new_y, new_z)
+                enemy.velocity = (vx, vy, vz)
 
-                # Occasionally change direction
-                if np.random.random() < 0.02:
-                    threat.velocity = (
-                        np.random.uniform(-0.3, 0.3),
-                        np.random.uniform(-0.3, 0.3),
-                        np.random.uniform(-0.1, 0.1)
-                    )
+    def render_bad_drones(self):
+        """Render enemy drones as RED spheres"""
+        if not self.bad_drone_controller or not self.show_threats:
+            return
 
-            self.last_threat_update = current_time
+        if not self.bad_drone_controller.enemies:
+            return
+
+        # Save current OpenGL state
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+
+        # Enable lighting
+        glEnable(GL_LIGHTING)
+        glEnable(GL_LIGHT0)
+        glEnable(GL_COLOR_MATERIAL)
+        glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+
+        # Set material properties for RED drones
+        glMaterialfv(GL_FRONT, GL_SPECULAR, (0.5, 0.2, 0.2, 1.0))  # Reddish specular
+        glMaterialf(GL_FRONT, GL_SHININESS, 30.0)
+
+        # Render each enemy drone
+        for enemy in self.bad_drone_controller.enemies:
+            glPushMatrix()
+
+            # Position
+            x, y, z = enemy.position
+            glTranslatef(x, y, z)
+
+            # Set BRIGHT RED color with pulsing effect
+            current_time = time.time()
+            pulse_factor = 0.9 + 0.1 * math.sin(current_time * 4)  # Gentle pulse
+
+            # Use enemy's red color (all enemies are red now)
+            r, g, b = enemy.color
+            glColor3f(r * pulse_factor, g * pulse_factor, b * pulse_factor)
+            glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE,
+                         (r * pulse_factor, g * pulse_factor, b * pulse_factor, 1.0))
+
+            # Draw as a sphere
+            quadric = gluNewQuadric()
+            gluSphere(quadric, enemy.size, 16, 16)
+            gluDeleteQuadric(quadric)
+
+            glPopMatrix()
+
+        # Restore OpenGL state
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+        glPopAttrib()
 
     def render_hud(self, model: Lahore3DModel):
         """Render Heads-Up Display"""
@@ -730,10 +815,16 @@ class Lahore3DRenderer:
         # Good drone status
         if self.good_drone_controller and self.show_good_drones:
             active_drones = len(self.good_drone_controller.drones)
+            enemy_count = 0
+            if self.bad_drone_controller:
+                enemy_count = len(self.bad_drone_controller.enemies)
+            elif self.good_drone_controller.enemies:
+                enemy_count = len(self.good_drone_controller.enemies)
 
             drone_text = [
                 "GOOD DRONES [D]",
                 f"Drones: {active_drones}",
+                f"Enemies: {enemy_count}",
                 f"Press 'M' for report",
                 f"Press 'I' to init"
             ]
@@ -841,10 +932,14 @@ class Lahore3DRenderer:
 
         # Update drones (silently - no debug output)
         if self.good_drone_controller and self.show_good_drones:
+            # Update enemies first
+            self.update_enemies(delta_time=0.016)
+            # Then update good drones
             self.good_drone_controller.update_drones(delta_time=0.016)
 
-        # Update threats
-        self.update_threats(model, 0.016)
+        # Update model threats (if not using bad drone controller)
+        if not self.bad_drone_controller:
+            self.update_threats(model, 0.016)
 
         # Render scene
         self.render_ground(model)
@@ -860,18 +955,21 @@ class Lahore3DRenderer:
             self.render_asset(asset)
 
         # Render canyons
-        glDepthMask(GL_FRONT_AND_BACK, GL_FALSE)
         for canyon in model.canyons:
-            self.render_canyon(canyon)
-        glDepthMask(GL_FRONT_AND_BACK, GL_TRUE)
+            self.render_canyon(canyon, model)  # Pass model as parameter
 
         # Render good drones
         if self.good_drone_controller and self.show_good_drones:
             self.render_good_drones()
 
-        # Render threats
-        for threat in model.threats:
-            self.render_threat(threat)
+        # RENDER BAD DRONES (ENEMIES) - THIS IS THE KEY FIX!
+        if self.bad_drone_controller and self.bad_drone_controller.enemies and self.show_threats:
+            # Use the new render_bad_drones method
+            self.render_bad_drones()
+        else:
+            # Fallback to original threats if bad drone controller not available
+            for threat in model.threats:
+                self.render_threat(threat)
 
         # Render HUD
         self.render_hud(model)
@@ -881,6 +979,65 @@ class Lahore3DRenderer:
 
         # Calculate FPS
         self.calculate_fps()
+
+    def update_threats(self, model: Lahore3DModel, delta_time: float):
+        """Update threat positions for animation (if not using bad drone controller)"""
+        current_time = time.time()
+        if current_time - self.last_threat_update > self.threat_update_interval:
+            # Get city bounds from model
+            city_min_x = model.min_x if model.min_x < model.max_x else -600
+            city_max_x = model.max_x if model.max_x > model.min_x else 600
+            city_min_y = model.min_y if model.min_y < model.max_y else -600
+            city_max_y = model.max_y if model.max_y > model.min_y else 600
+
+            # Add buffer to bounds
+            buffer = 50
+            city_min_x -= buffer
+            city_max_x += buffer
+            city_min_y -= buffer
+            city_max_y += buffer
+
+            for threat in model.threats:
+                # Update position based on velocity
+                x, y, z = threat.position
+                vx, vy, vz = threat.velocity
+
+                # Calculate new position
+                new_x = x + vx * 20
+                new_y = y + vy * 20
+                new_z = max(50, min(z + vz * 20, 300))
+
+                # Boundary checking and bouncing
+                bounce_factor = 0.8
+
+                # X boundary
+                if new_x < city_min_x or new_x > city_max_x:
+                    vx = -vx * bounce_factor
+                    new_x = max(city_min_x, min(new_x, city_max_x))
+
+                # Y boundary
+                if new_y < city_min_y or new_y > city_max_y:
+                    vy = -vy * bounce_factor
+                    new_y = max(city_min_y, min(new_y, city_max_y))
+
+                # Z boundary (altitude)
+                if new_z < 30 or new_z > 400:
+                    vz = -vz * bounce_factor
+                    new_z = max(30, min(new_z, 400))
+
+                # Update threat properties
+                threat.position = (new_x, new_y, new_z)
+                threat.velocity = (vx, vy, vz)
+
+                # Occasionally change direction
+                if np.random.random() < 0.02:
+                    threat.velocity = (
+                        np.random.uniform(-0.3, 0.3),
+                        np.random.uniform(-0.3, 0.3),
+                        np.random.uniform(-0.1, 0.1)
+                    )
+
+            self.last_threat_update = current_time
 
     def run(self, model: Lahore3DModel):
         """Main render loop"""

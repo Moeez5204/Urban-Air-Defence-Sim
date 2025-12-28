@@ -158,7 +158,7 @@ def main():
         print("=" * 50)
 
         # Initialize good drones
-        drone_init_success = renderer.initialize_good_drones(num_drones=8)
+        drone_init_success = renderer.initialize_good_drones(num_drones=4)
 
         if drone_init_success:
             print("\n" + "=" * 50)

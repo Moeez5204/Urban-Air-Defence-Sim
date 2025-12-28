@@ -1,8 +1,3 @@
-"""
-GOOD_DRONE_CONTROLLER.py - COMPLETE INTEGRATED SYSTEM
-Combines original radar tracking + LSTM + ASDA in 3D urban environment
-"""
-
 import random
 import math
 import time
@@ -11,8 +6,24 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Optional
 import numpy as np
 
+# Try to import enemy drones from separate file
+try:
+    from bad_drone_controller import EnemyDrone3D
+    ENEMY_DRONE_AVAILABLE = True
+except ImportError:
+    ENEMY_DRONE_AVAILABLE = False
+    # Fallback EnemyDrone3D class if not available
+    @dataclass
+    class EnemyDrone3D:
+        """3D enemy drone"""
+        id: str
+        position: Tuple[float, float, float]
+        velocity: Tuple[float, float, float]
+        color: Tuple[float, float, float] = (1.0, 0.0, 0.0)  # Red
+        size: float = 8.0
+
 # ============================================================================
-# DATA STRUCTURES
+# DATA STRUCTURES (GOOD DRONE ONLY)
 # ============================================================================
 
 @dataclass
@@ -38,15 +49,6 @@ class GoodDrone3D:
     patrol_points: List[Tuple[float, float, float]] = field(default_factory=list)
     target_position: Tuple[float, float, float] = (0, 0, 0)
     patrol_index: int = 0
-
-@dataclass
-class EnemyDrone3D:
-    """3D enemy drone"""
-    id: str
-    position: Tuple[float, float, float]
-    velocity: Tuple[float, float, float]
-    color: Tuple[float, float, float] = (1.0, 0.0, 0.0)  # Red
-    size: float = 8.0
 
 @dataclass
 class UrbanFeature:
@@ -138,7 +140,6 @@ class UrbanDroneRadar:
         fw, fl, fh = feature.dimensions
 
         # Check if line segment intersects bounding box
-        # (Simplified - real implementation would use proper 3D ray-box intersection)
         dx, dy, dz = end[0] - start[0], end[1] - start[1], end[2] - start[2]
 
         # Quick rejection test
@@ -148,7 +149,6 @@ class UrbanDroneRadar:
             return False
 
         # For simplicity, assume intersection if feature is between drone and target
-        # Real implementation would use proper line-plane intersection
         return True
 
     def _calculate_distance(self, target_pos):
@@ -161,7 +161,6 @@ class UrbanDroneRadar:
     def _in_radar_fov(self, target_pos):
         """Check if target is within radar field of view"""
         # Simplified FOV check in 3D
-        # Real implementation would use proper spherical coordinates
         return True  # For now, assume omnidirectional
 
     def _calculate_urban_error(self, target_pos, urban_features):
@@ -195,11 +194,9 @@ class UrbanDroneRadar:
 
     def _ray_near_feature(self, start, end, feature, threshold=20.0):
         """Check if ray passes near a feature"""
-        # Simplified proximity check
         fx, fy, fz = feature.position
 
         # Find closest point on line to feature center
-        # (Simplified - real implementation would use proper distance to line segment)
         line_dir = (end[0] - start[0], end[1] - start[1], end[2] - start[2])
         line_length = math.sqrt(line_dir[0]**2 + line_dir[1]**2 + line_dir[2]**2)
 
@@ -319,7 +316,6 @@ class DroneCommunicationNetwork:
 
     def _triangulate_positions(self):
         """Triangulate positions from multiple measurements (from your original code)"""
-        # Your original triangulation logic adapted to 3D
         for drone in self.drones:
             if not drone.estimated_positions:
                 continue
@@ -482,12 +478,12 @@ class AdaptiveSectorDefense:
 # ============================================================================
 
 class GoodDroneController:
-    """Complete integrated controller with radar, LSTM, and ASDA"""
+    """Complete integrated controller with radar, LSTM, and ASDA - GOOD DRONES ONLY"""
 
     def __init__(self):
         # Core systems
         self.drones: List[GoodDrone3D] = []
-        self.enemies: List[EnemyDrone3D] = []
+        self.enemies: List[EnemyDrone3D] = []  # Enemies will be provided externally
         self.urban_features: List[UrbanFeature] = []
 
         # Integrated subsystems
@@ -503,11 +499,15 @@ class GoodDroneController:
             'z_min': 30, 'z_max': 400
         }
 
-        print("✓ Complete Integrated Drone Controller Initialized")
+        print("✓ Complete Integrated GOOD Drone Controller Initialized")
         print("  - Urban Radar System (from original code)")
         print("  - Multistatic Communication Network")
         print("  - LSTM Movement Predictor")
         print("  - Adaptive Sector Defense Allocation")
+
+    def set_enemies(self, enemies):
+        """Set enemies from external controller"""
+        self.enemies = enemies
 
     def initialize_drones(self, num_drones: int = 8):
         """Initialize complete drone system"""
@@ -519,12 +519,9 @@ class GoodDroneController:
         # Generate some urban features for radar testing
         self._generate_urban_features()
 
-        # Generate some enemies for testing
-        self._generate_enemies(6)
-
-        # Run ASDA allocation
-        allocations = self.adaptive_sector.allocate_drones(num_drones,
-                                                         [e.position for e in self.enemies])
+        # Run ASDA allocation using current enemies
+        enemy_positions = [e.position for e in self.enemies] if self.enemies else []
+        allocations = self.adaptive_sector.allocate_drones(num_drones, enemy_positions)
 
         # Create drones
         drone_id = 0
@@ -590,25 +587,6 @@ class GoodDroneController:
 
         print(f"Generated {len(self.urban_features)} urban features for radar testing")
 
-    def _generate_enemies(self, num_enemies):
-        """Generate enemy drones"""
-        self.enemies = []
-
-        for i in range(num_enemies):
-            x = random.uniform(self.map_bounds['x_min'], self.map_bounds['x_max'])
-            y = random.uniform(self.map_bounds['y_min'], self.map_bounds['y_max'])
-            z = random.uniform(self.map_bounds['z_min'], self.map_bounds['z_max'])
-
-            vx = random.uniform(-0.3, 0.3)
-            vy = random.uniform(-0.3, 0.3)
-            vz = random.uniform(-0.1, 0.1)
-
-            self.enemies.append(EnemyDrone3D(
-                id=f"Enemy_{i:02d}",
-                position=(x, y, z),
-                velocity=(vx, vy, vz)
-            ))
-
     def _create_patrol_path(self, drone, center, radius):
         """Create patrol path for drone"""
         cx, cy, cz = center
@@ -626,44 +604,19 @@ class GoodDroneController:
 
     def update_drones(self, delta_time: float = 0.016):
         """Update complete drone system"""
-        if not self.drones:
+        if not self.drones or not self.enemies:
             return
 
         self.current_time += delta_time
 
-        # Step 1: Update enemy positions (simulate enemy movement)
-        for enemy in self.enemies:
-            x, y, z = enemy.position
-            vx, vy, vz = enemy.velocity
-
-            new_x = x + vx * 20
-            new_y = y + vy * 20
-            new_z = z + vz * 20
-
-            # Boundary bounce
-            if new_x < self.map_bounds['x_min'] or new_x > self.map_bounds['x_max']:
-                vx = -vx * 0.8
-                new_x = max(self.map_bounds['x_min'], min(new_x, self.map_bounds['x_max']))
-
-            if new_y < self.map_bounds['y_min'] or new_y > self.map_bounds['y_max']:
-                vy = -vy * 0.8
-                new_y = max(self.map_bounds['y_min'], min(new_y, self.map_bounds['y_max']))
-
-            if new_z < self.map_bounds['z_min'] or new_z > self.map_bounds['z_max']:
-                vz = -vz * 0.8
-                new_z = max(self.map_bounds['z_min'], min(new_z, self.map_bounds['z_max']))
-
-            enemy.position = (new_x, new_y, new_z)
-            enemy.velocity = (vx, vy, vz)
-
-        # Step 2: Update radar network (multistatic communication)
+        # Step 1: Update radar network (multistatic communication)
         self.radar_network.update(self.current_time, self.enemies, self.urban_features)
 
-        # Step 3: Update drone movement
+        # Step 2: Update drone movement
         for drone in self.drones:
             self._update_single_drone(drone, delta_time)
 
-        # Step 4: Update ASDA based on current threats
+        # Step 3: Update ASDA based on current threats
         threat_positions = [e.position for e in self.enemies]
         self.adaptive_sector._update_threats(threat_positions)
 
@@ -733,7 +686,24 @@ def test_integrated_system():
 
     # Create controller
     controller = GoodDroneController()
-    controller.initialize_drones(num_drones=8)
+
+    # Create simple enemies for testing
+    from dataclasses import dataclass
+    @dataclass
+    class TestEnemy:
+        id: str
+        position: Tuple[float, float, float]
+        velocity: Tuple[float, float, float]
+        color: Tuple[float, float, float] = (1.0, 0.0, 0.0)
+        size: float = 8.0
+
+    # Add test enemies
+    controller.enemies = [
+        TestEnemy(id="Enemy_01", position=(100, 100, 100), velocity=(0.1, 0.1, 0)),
+        TestEnemy(id="Enemy_02", position=(-100, -100, 150), velocity=(-0.1, -0.1, 0)),
+    ]
+
+    controller.initialize_drones(num_drones=4)
 
     # Print system status
     print(f"\nSystem Status:")
