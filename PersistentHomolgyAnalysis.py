@@ -1,21 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import json
-from matplotlib.patches import Rectangle
-import gudhi as gd
 
 
 def load_topological_data(filename='topological_features_3.1.2.json'):
-    """
-    Load topological features from Phase 3.1.2
-    """
-    print(f"Loading topological data from {filename}...")
+
+
 
     try:
         with open(filename, 'r') as f:
             data = json.load(f)
 
-        print(f"Successfully loaded topological features")
+        print(f"loaded topological features")
         print(f"Summary: {data['summary']}")
         return data
 
@@ -25,10 +21,6 @@ def load_topological_data(filename='topological_features_3.1.2.json'):
 
 
 def analyze_persistence_barcodes(features):
-    """
-    Analyze persistence barcodes to extract strategic urban features
-    """
-    print("\n=== Analyzing Persistence Barcodes ===")
 
     h0_persistence = [f['persistence'] for f in features['components']]
     h1_persistence = [f['persistence'] for f in features['loops']]
@@ -55,7 +47,7 @@ def analyze_persistence_barcodes(features):
         }
     }
 
-    print("Persistence Statistics:")
+    print("Persistence statistics:")
     print(f"  H0 (Components): {stats['h0']['count']} features, max persistence: {stats['h0']['max']:.2f} m²")
     print(f"  H1 (Loops): {stats['h1']['count']} features, max persistence: {stats['h1']['max']:.2f} m²")
     print(f"  H2 (Voids): {stats['h2']['count']} features, max persistence: {stats['h2']['max']:.2f} m²")
@@ -63,11 +55,7 @@ def analyze_persistence_barcodes(features):
     return stats, h0_persistence, h1_persistence, h2_persistence
 
 
-def classify_urban_features(features, stats):
-    """
-    Classify urban features based on persistence thresholds
-    """
-    print("\n=== Classifying Urban Features ===")
+def classify_urban_features(features, stats): #classify the features based off the persistance thresholds
 
     h1_threshold = stats['h1']['mean'] + 1.5 * stats['h1']['std']
     h0_threshold = stats['h0']['mean'] + 1.5 * stats['h0']['std']
@@ -107,21 +95,16 @@ def classify_urban_features(features, stats):
 
 
 def visualize_persistence_barcodes(h0_persistence, h1_persistence, h2_persistence, classified_features):
-    """
-    Create clean, readable persistence barcode visualization
-    """
-    print("\nGenerating persistence barcode visualization...")
+
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
 
-    top_n_h0 = 50
-    top_n_h1 = 100
+    top_n_h0,top_n_h1 = 50,100
     top_n_h2 = 50
 
     h0_top = sorted(h0_persistence, reverse=True)[:top_n_h0]
     h1_top = sorted(h1_persistence, reverse=True)[:top_n_h1]
     h2_top = sorted(h2_persistence, reverse=True)[:top_n_h2]
-
     dimensions = [h0_top, h1_top, h2_top]
     colors = ['blue', 'red', 'green']
     labels = ['H0 Components', 'H1 Loops (Canyons)', 'H2 Voids']
@@ -134,7 +117,6 @@ def visualize_persistence_barcodes(h0_persistence, h1_persistence, h2_persistenc
     ax1.set_title('Persistence Barcodes\n(Top Features Only — Clean View)')
     ax1.grid(True, alpha=0.3)
 
-    # Plot 2: Strategic Feature Classification
     categories = ['Primary\nCanyons', 'Secondary\nCanyons', 'Major\nObstacles', 'Minor\nObstacles', 'Strategic\nVoids']
     counts = [
         len(classified_features['primary_canyons']),
@@ -162,10 +144,6 @@ def visualize_persistence_barcodes(h0_persistence, h1_persistence, h2_persistenc
 
 
 def calculate_strategic_metrics(classified_features):
-    """
-    Calculate military-strategic metrics
-    """
-    print("\n=== Calculating Strategic Metrics ===")
 
     metrics = {}
 
@@ -180,7 +158,7 @@ def calculate_strategic_metrics(classified_features):
     metrics['urban_complexity'] = sum(len(f) for f in classified_features.values())
     metrics['defense_suitability'] = (metrics['canyon_stability'] + metrics['obstacle_density'] * 100) / 100
 
-    print("Strategic Metrics:")
+    print(" strategic Metrics:")
     print(f"  Canyon Stability: {metrics['canyon_stability']:.2f} m²")
     print(f"  Obstacle Density: {metrics['obstacle_density']}")
     print(f"  Defense Suitability: {metrics['defense_suitability']:.2f}")
@@ -189,10 +167,6 @@ def calculate_strategic_metrics(classified_features):
 
 
 def export_strategic_analysis(classified_features, metrics, filename='strategic_analysis_3.1.3.json'):
-    """
-    Export for Phase 3.2
-    """
-    print(f"\nExporting strategic analysis to {filename}...")
     export_data = {
         'classified_features': classified_features,
         'strategic_metrics': metrics,
@@ -204,17 +178,13 @@ def export_strategic_analysis(classified_features, metrics, filename='strategic_
     }
     with open(filename, 'w') as f:
         json.dump(export_data, f, indent=2)
-    print("Strategic analysis exported!")
+    print("exported ")
     return export_data
 
 
 def run_phase_3_1_3():
-    """
-    Run Phase 3.1.3: Persistent Homology Analysis
-    """
-    print("=" * 60)
-    print("PHASE 3.1.3: Persistent Homology Analysis")
-    print("=" * 60)
+
+    print("Phase 3.1.3: persistent homology analysis")
 
     topological_data = load_topological_data()
     if topological_data is None:
@@ -227,9 +197,6 @@ def run_phase_3_1_3():
     metrics = calculate_strategic_metrics(classified_features)
     strategic_analysis = export_strategic_analysis(classified_features, metrics)
 
-    print("\n" + "=" * 60)
-    print("PHASE 3.1.3 COMPLETE!")
-    print("=" * 60)
     print(f"Primary Canyons: {len(classified_features['primary_canyons'])}")
     print(f"Major Obstacles: {len(classified_features['major_obstacles'])}")
     print(f"Defense Suitability: {metrics['defense_suitability']:.2f}")

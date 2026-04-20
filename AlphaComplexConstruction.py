@@ -1,9 +1,7 @@
 import numpy as np
 import gudhi as gd
-from scipy.spatial import Delaunay
 from shapely.geometry import Point
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import random
 import json
 from shapely.geometry import shape
@@ -11,10 +9,8 @@ import utm
 
 
 def load_building_data_from_export(filename='building_data_3.1.1.json'):
-    """
-    Load building data exported from Phase 3.1.1
-    """
-    print(f"Loading building data from {filename}...")
+
+    print(f"Loading building data from {filename}")
 
     try:
         with open(filename, 'r') as f:
@@ -32,25 +28,25 @@ def load_building_data_from_export(filename='building_data_3.1.1.json'):
             }
             building_footprints.append(building)
 
-        print(f"Successfully loaded {len(building_footprints)} buildings from {filename}")
+        print(f"loaded {len(building_footprints)} buildings from {filename}")
         return building_footprints
 
     except FileNotFoundError:
-        print(f"Error: {filename} not found. Please run CityModelReconstruct.py first.")
+        print(f"error: {filename} not found. Run CityModelReconstruct.py first.")
         return None
     except Exception as e:
-        print(f"Error loading building data: {e}")
+        print(f"failed")
         return None
 
 
 def sample_building_points(building_footprints, points_per_building=8):
-    """
-    Convert continuous building surfaces to point cloud
-    """
+
+    # Convert continuous building surfaces to point cloud
+
     point_cloud = []
     building_labels = []
 
-    print("Sampling building points for alpha complex...")
+    print("Sampling building points for alpha complex")
 
     for i, building in enumerate(building_footprints):
         if i % 100 == 0:
@@ -65,13 +61,13 @@ def sample_building_points(building_footprints, points_per_building=8):
         point_cloud.extend(roof_points)
         building_labels.extend([f"{zone}_roof_{i}"] * len(roof_points))
 
-        # Sample ground points for vertical features
+        # Sample ground points
         ground_points = sample_polygon_surface(poly, 0, max(2, points_per_building // 3))
         point_cloud.extend(ground_points)
         building_labels.extend([f"{zone}_ground_{i}"] * len(ground_points))
 
-        # Sample mid-height points for taller buildings
-        if height > 15:
+        #Sample mid-height points
+        if height > 16:
             mid_points = sample_polygon_surface(poly, height / 2, 2)
             point_cloud.extend(mid_points)
             building_labels.extend([f"{zone}_mid_{i}"] * len(mid_points))
@@ -81,9 +77,7 @@ def sample_building_points(building_footprints, points_per_building=8):
 
 
 def sample_polygon_surface(polygon, z_height, num_points):
-    """
-    Use Monte Carlo sampling to generate points
-    """
+  # monte carlo smapling
     points = []
     bounds = polygon.bounds
     max_attempts = num_points * 50
@@ -109,11 +103,7 @@ def sample_polygon_surface(polygon, z_height, num_points):
 
 
 def project_to_utm(point_cloud):
-    """
-    Convert (lon, lat, height_m) → (easting, northing, height_m) using UTM
-    Ensures all coordinates are in meters for correct Alpha Complex
-    """
-    print("Projecting point cloud from (lon, lat) to UTM (meters)...")
+    print("point cloud to meters")
     projected = []
     for lon, lat, h in point_cloud:
         easting, northing, zone_num, zone_letter = utm.from_latlon(lat, lon)
@@ -122,10 +112,6 @@ def project_to_utm(point_cloud):
 
 
 def build_alpha_complex(point_cloud, max_alpha_square=2500):
-    """
-    Construct Alpha Complex from 3D point cloud
-    """
-    print("Building Alpha Complex...")
 
     try:
         alpha_complex = gd.AlphaComplex(points=point_cloud)
@@ -137,28 +123,21 @@ def build_alpha_complex(point_cloud, max_alpha_square=2500):
 
         return simplex_tree, persistence
 
-    except Exception as e:
-        print(f"Error building Alpha Complex: {e}")
-        return None, None
+    except:
+        return None
 
 
 def analyze_topological_features(simplex_tree, persistence):
-    """
-    Analyze and classify topological features from persistence
-    """
-    print("Analyzing topological features...")
 
+    #classify topological features from persistance
     features = {
-        'components': [], 'loops': [], 'voids': [],
-        'canyons': [], 'obstacles': []
-    }
+        'components': [], 'loops': [], 'voids': [],'canyons': [], 'obstacles': [] }
 
     if persistence is None:
         return features
 
     for dim, (birth, death) in persistence:
-        persistence_value = death - birth if death != float('inf') else birth
-
+        persistence_value = death - birth
         if dim == 0:
             feature_data = {
                 'birth': birth,
@@ -167,7 +146,7 @@ def analyze_topological_features(simplex_tree, persistence):
                 'type': 'component'
             }
             features['components'].append(feature_data)
-            if persistence_value > 100:  # ~10m scale
+            if persistence_value > 100:  # 10m scale
                 features['obstacles'].append(feature_data)
 
         elif dim == 1:
@@ -178,7 +157,7 @@ def analyze_topological_features(simplex_tree, persistence):
                 'type': 'canyon_loop'
             }
             features['loops'].append(feature_data)
-            if persistence_value > 400:  # ~20m scale
+            if persistence_value > 400:  # 20m scale
                 features['canyons'].append(feature_data)
 
         elif dim == 2:
@@ -193,17 +172,14 @@ def analyze_topological_features(simplex_tree, persistence):
         if features[key]:
             features[key].sort(key=lambda x: x['persistence'], reverse=True)
 
-    print(f"Found {len(features['components'])} components, {len(features['loops'])} loops, {len(features['voids'])} voids")
-    print(f"Significant: {len(features['canyons'])} canyons, {len(features['obstacles'])} obstacles")
+    print(f"Components: {len(features['components'])}, Loops: {len(features['loops'])}, Voids: {len(features['voids'])}")
+    print(f"Canyons: {len(features['canyons'])}, Obstacles: {len(features['obstacles'])}")
 
     return features
 
 
 def visualize_alpha_complex(point_cloud, simplex_tree, features):
-    """
-    Visualize point cloud, persistence diagram, and summary
-    """
-    print("Generating visualization...")
+    #visualize point cloud
 
     fig = plt.figure(figsize=(15, 5))
 
@@ -229,10 +205,8 @@ def visualize_alpha_complex(point_cloud, simplex_tree, features):
     ax2.set_ylabel('Death (m²)')
     ax2.set_title('Persistence Diagram')
     ax2.legend()
-    ax2.grid(True, alpha=0.3)
 
     ax3 = fig.add_subplot(133)
-    ax3.axis('off')
     summary_text = "Topological Features:\n\n"
     summary_text += f"Components (H0): {len(features['components'])}\n"
     summary_text += f"Loops (H1): {len(features['loops'])}\n"
@@ -249,9 +223,6 @@ def visualize_alpha_complex(point_cloud, simplex_tree, features):
 
 
 def export_topological_data(features, point_cloud, filename='topological_features_3.1.2.json'):
-    """
-    Export topological features
-    """
     export_data = {
         'features': features,
         'point_cloud_sample': point_cloud[:1000].tolist() if len(point_cloud) > 1000 else point_cloud.tolist(),
@@ -270,18 +241,11 @@ def export_topological_data(features, point_cloud, filename='topological_feature
 
 
 def run_phase_3_1_2():
-    """
-    Run Phase 3.1.2: Alpha Complex Construction
-    """
-    print("=== Phase 3.1.2: Alpha Complex Construction ===")
-
     building_footprints = load_building_data_from_export()
     if building_footprints is None:
         return None
 
     point_cloud, labels = sample_building_points(building_footprints)
-
-    # PROJECT TO UTM (meters) — CRITICAL FIX
     point_cloud = project_to_utm(point_cloud)
 
     simplex_tree, persistence = build_alpha_complex(point_cloud, max_alpha_square=2500)  # 50m scale
@@ -290,7 +254,6 @@ def run_phase_3_1_2():
     visualize_alpha_complex(point_cloud, simplex_tree, features)
     export_topological_data(features, point_cloud)
 
-    print("=== Phase 3.1.2 Complete ===")
     return features, point_cloud, simplex_tree
 
 

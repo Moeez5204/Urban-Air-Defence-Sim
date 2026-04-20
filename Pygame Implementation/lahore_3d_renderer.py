@@ -6,33 +6,25 @@ from OpenGL.GLU import *
 import numpy as np
 import math
 import time
-from typing import Tuple, List
 from lahore_model_builder import Lahore3DModel, Building3D, Canyon3D, Threat3D, Asset3D
 import random
+from good_drone_controller import GoodDroneController, GoodDrone3D
 
-# Try to import good drone controller
-try:
-    from good_drone_controller import GoodDroneController, GoodDrone3D
 
-    GOOD_DRONES_AVAILABLE = True
-    print("✓ Good drone controller available")
-except ImportError:
-    GOOD_DRONES_AVAILABLE = False
-    print("Note: Good drone controller not available")
+GOOD_DRONES_AVAILABLE = True
 
 # Try to import bad drone controller
 try:
     from bad_drone_controller import BadDroneController, EnemyDrone3D
 
     BAD_DRONES_AVAILABLE = True
-    print("✓ Bad drone controller available")
+    print("Bad drone controller working")
 except ImportError:
     BAD_DRONES_AVAILABLE = False
-    print("Note: Bad drone controller not available")
+    print("Bad drone controller not working")
 
 
 class Lahore3DRenderer:
-    """OpenGL renderer for Lahore 3D model with good drone defense system"""
 
     def __init__(self, screen_width=1400, screen_height=900):
         # PyGame initialization
@@ -40,7 +32,7 @@ class Lahore3DRenderer:
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.screen = pygame.display.set_mode((screen_width, screen_height), DOUBLEBUF | OPENGL)
-        pygame.display.set_caption("Lahore 3D Urban Defense Visualization - With Good Drone Defense")
+        pygame.display.set_caption("Lahore 3D Urban Defense Visualization")
 
         # OpenGL initialization
         glEnable(GL_DEPTH_TEST)
@@ -61,8 +53,8 @@ class Lahore3DRenderer:
         # Camera settings
         self.camera_distance = 1000
         self.camera_angle_x = 45
-        self.camera_angle_y = -45  # Better top-down view
-        self.camera_target = (0, 0, 50)  # Raise target point
+        self.camera_angle_y = -45
+        self.camera_target = (0, 0, 50)
 
         # Mouse control
         self.mouse_dragging = False
@@ -77,6 +69,7 @@ class Lahore3DRenderer:
         self.show_ground = True
         self.show_axes = True
         self.show_good_drones = True
+        self.show_radar_pulses = False
 
         # Drone systems
         self.good_drone_controller = None
@@ -97,19 +90,16 @@ class Lahore3DRenderer:
         self.last_fps_time = time.time()
         self.fps = 0
 
-        print("✓ 3D Renderer initialized")
+        print("3D Renderer initialized")
 
     def initialize_good_drones(self, num_drones=4):
-        """Initialize the good drone defense system"""
         if not GOOD_DRONES_AVAILABLE:
             print("⚠ Good drone controller not available.")
             return False
 
         try:
-            # Create controllers
             self.good_drone_controller = GoodDroneController()
 
-            # Create bad drones if available
             if BAD_DRONES_AVAILABLE:
                 self.bad_drone_controller = BadDroneController()
                 enemies = self.bad_drone_controller.generate_enemies(num_enemies=6)  # More enemies!
@@ -130,37 +120,34 @@ class Lahore3DRenderer:
                         size=8.0
                     ))
 
-            # Set enemies for good drone controller
             self.good_drone_controller.set_enemies(enemies)
 
-            # Initialize good drones
-            drones = self.good_drone_controller.initialize_drones(num_drones=num_drones)
+            drones = self.good_drone_controller.initialize_drones(num_drones=num_drones) #init
 
             if drones:
-                print(f"✓ {len(drones)} good drones initialized")
-                print(f"✓ {len(enemies)} enemy drones initialized")
-                print("✓ Press 'M' for ASDA/LSTM report")
-                print("✓ Press 'D' to toggle drone visibility")
+                print(f" {len(drones)} good drones initialized")
+                print(f" {len(enemies)} enemy drones initialized")
+                print("Press 'M' for ASDA/LSTM report")
+                print("Press 'D' to toggle drone visibility")
+                print("Press 'P' to toggle radar pulses")
                 return True
             else:
-                print("⚠ No drones initialized")
+                print("No drones initialized")
                 return False
 
         except Exception as e:
-            print(f"❌ Error initializing good drones: {e}")
+            print(f"Error initializing good drones: {e}")
             import traceback
             traceback.print_exc()
             return False
 
     def setup_projection(self):
-        """Set up OpenGL projection matrix"""
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
         gluPerspective(45, (self.screen_width / self.screen_height), 0.1, 10000.0)
         glMatrixMode(GL_MODELVIEW)
 
     def handle_events(self):
-        """Handle PyGame events"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -181,14 +168,17 @@ class Lahore3DRenderer:
                     self.show_ground = not self.show_ground
                 elif event.key == pygame.K_x:
                     self.show_axes = not self.show_axes
-                elif event.key == pygame.K_d:  # 'D' key to toggle good drones
+                elif event.key == pygame.K_d:
                     self.show_good_drones = not self.show_good_drones
-                elif event.key == pygame.K_i:  # 'I' key to initialize drones
+                elif event.key == pygame.K_p:
+                    self.show_radar_pulses = not self.show_radar_pulses
+                    print(f"Radar pulses: {'ON' if self.show_radar_pulses else 'OFF'}")
+                elif event.key == pygame.K_i:
                     if not self.good_drone_controller:
                         self.initialize_good_drones(num_drones=8)
                     else:
                         print("Good drones already initialized")
-                elif event.key == pygame.K_m:  # 'M' key for ASDA/LSTM report
+                elif event.key == pygame.K_m:
                     self.print_asda_lstm_report()
                 elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                     self.camera_distance *= 0.9
@@ -209,15 +199,15 @@ class Lahore3DRenderer:
                     self.camera_angle_y = -45
                     self.camera_target = (0, 0, 50)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
+                if event.button == 1:
                     self.mouse_dragging = True
                     self.last_mouse_pos = pygame.mouse.get_pos()
-                elif event.button == 4:  # Scroll up
+                elif event.button == 4:
                     self.camera_distance *= 0.9
-                elif event.button == 5:  # Scroll down
+                elif event.button == 5:
                     self.camera_distance *= 1.1
             elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:  # Left click release
+                if event.button == 1:
                     self.mouse_dragging = False
             elif event.type == pygame.MOUSEMOTION:
                 if self.mouse_dragging:
@@ -226,20 +216,17 @@ class Lahore3DRenderer:
                     dy = y - self.last_mouse_pos[1]
                     self.camera_angle_x += dx * 0.5
                     self.camera_angle_y += dy * 0.5
-                    self.camera_angle_y = max(-89, min(89, self.camera_angle_y))  # Limit vertical
+                    self.camera_angle_y = max(-89, min(89, self.camera_angle_y))
                     self.last_mouse_pos = (x, y)
 
         return True
 
     def print_asda_lstm_report(self):
-        """Print ASDA and LSTM report when 'M' is pressed"""
         if not self.good_drone_controller:
-            print("\n⚠ Good drone controller not initialized")
+            print("\n Good drone controller not initialized")
             return
 
-        print("\n" + "=" * 60)
         print("ASDA & LSTM SYSTEM REPORT")
-        print("=" * 60)
 
         controller = self.good_drone_controller
 
@@ -256,11 +243,23 @@ class Lahore3DRenderer:
             controller.adaptive_sector._update_threats(threat_positions)
 
         # ASDA Allocation Report
-        print("\nADAPTIVE SECTOR DEFENSE ALLOCATION (ASDA):")
-        print("-" * 55)
+        print("ADAPTIVE SECTOR DEFENSE ALLOCATION (ASDA):")
 
-        sector_data = controller.adaptive_sector.sectors
-        sector_threats = controller.adaptive_sector.sector_threats
+        # Get sectors from external ASDA
+        sector_names = ['Walled_City', 'Central_Lahore', 'Gulberg', 'Cantonment', 'Other_Sector']
+        sector_priorities = {
+            'Walled_City': 0.9,
+            'Central_Lahore': 1.0,
+            'Gulberg': 0.8,
+            'Cantonment': 0.7,
+            'Other_Sector': 0.6
+        }
+
+        # Get threat counts from external ASDA's threat_history
+        sector_threats = {sector: 0 for sector in sector_names}
+        if hasattr(controller.adaptive_sector, 'threat_history'):
+            for sector, threats in controller.adaptive_sector.threat_history.items():
+                sector_threats[sector] = len(threats) if threats else 0
 
         # Count drones per sector
         sector_drone_counts = {}
@@ -268,10 +267,24 @@ class Lahore3DRenderer:
             sector = drone.sector
             sector_drone_counts[sector] = sector_drone_counts.get(sector, 0) + 1
 
-        for sector_name, sector_info in sector_data.items():
+        for sector_name in sector_names:
             drones = sector_drone_counts.get(sector_name, 0)
             threats = sector_threats.get(sector_name, 0)
-            priority = sector_info['priority']
+            priority = sector_priorities.get(sector_name, 0.5)
+
+            # Create bar for drones
+            drone_bar = "█" * min(drones, 10)
+            if drones > 10:
+                drone_bar += f"+{drones - 10}"
+
+            # Create bar for threats
+            threat_bar = "⚠" * min(threats, 5)
+            if threats > 5:
+                 threat_bar += f"+{threats - 5}"
+
+            print(f"{sector_name:<18} Priority: {priority:.2f}")
+            print(f"Drones:  {drone_bar:<15} ({drones})")
+            print(f"Threats: {threat_bar:<15} ({threats})")
 
             # Create bar for drones
             drone_bar = "█" * min(drones, 10)
@@ -290,9 +303,8 @@ class Lahore3DRenderer:
 
         # LSTM Prediction Report
         print("\nLSTM PREDICTION SYSTEM:")
-        print("-" * 55)
 
-        # Simulate some LSTM predictions
+        # simulate some LSTM predictions
         prediction_accuracies = {
             '5-second': random.uniform(0.7, 0.9),
             '10-second': random.uniform(0.5, 0.7),
@@ -306,26 +318,26 @@ class Lahore3DRenderer:
             percentage = accuracy * 100
             print(f"{pred_type:<20} {bar} {percentage:5.1f}%")
 
-        # System Summary
+        # system Summary
         print("\nSYSTEM SUMMARY:")
-        print("-" * 55)
         print(f"Total Drones: {len(controller.drones)}")
         print(f"Total Threats: {len(enemies)}")
         print(f"Active Sectors: {len([s for s in sector_drone_counts if sector_drone_counts[s] > 0])}")
 
         # Calculate defense coverage
         total_drones = len(controller.drones)
-        max_drones_per_sector = 10  # Theoretical max
-        coverage = min(100, (total_drones / (len(sector_data) * 2)) * 100)  # 2 drones per sector ideal
+        num_sectors = len(sector_names)  # Use sector_names instead of undefined sector_data
+        coverage = min(100, (total_drones / (num_sectors * 2)) * 100)  # 2 drones per sector ideal
 
         coverage_bar_length = int(coverage / 5)
         coverage_bar = "█" * coverage_bar_length + "░" * (20 - coverage_bar_length)
         print(f"Defense Coverage: {coverage_bar} {coverage:5.1f}%")
 
-        print("=" * 60)
+        coverage_bar_length = int(coverage / 5)
+        coverage_bar = "█" * coverage_bar_length + "░" * (20 - coverage_bar_length)
+        print(f"Defense Coverage: {coverage_bar} {coverage:5.1f}%")
 
     def update_camera(self):
-        """Update camera position based on angles and distance"""
         glLoadIdentity()
 
         # Convert spherical coordinates to Cartesian
@@ -339,36 +351,34 @@ class Lahore3DRenderer:
         # Add camera target offset
         target_x, target_y, target_z = self.camera_target
 
-        # Look at target
         gluLookAt(
-            camera_x + target_x, camera_y + target_z, camera_z + target_y,  # Camera position
-            target_x, target_z, target_y,  # Look at point (swap y and z for better orientation)
-            0, 1, 0  # Up vector
+            camera_x + target_x, camera_y + target_z, camera_z + target_y,  # Camera pos
+            target_x, target_z, target_y,
+            0, 1, 0
         )
 
     def render_axes(self):
-        """Render XYZ axes for orientation"""
         if not self.show_axes:
             return
 
         glDisable(GL_LIGHTING)
         glLineWidth(2.0)
 
-        # X axis (Red)
+        # X axis
         glBegin(GL_LINES)
         glColor3f(1.0, 0.0, 0.0)
         glVertex3f(0, 0, 0)
         glVertex3f(200, 0, 0)
         glEnd()
 
-        # Y axis (Green) - Note: In our coordinate system, Y is up
+        # Y axis
         glBegin(GL_LINES)
         glColor3f(0.0, 1.0, 0.0)
         glVertex3f(0, 0, 0)
         glVertex3f(0, 200, 0)
         glEnd()
 
-        # Z axis (Blue)
+        # Z axis
         glBegin(GL_LINES)
         glColor3f(0.0, 0.0, 1.0)
         glVertex3f(0, 0, 0)
@@ -379,7 +389,7 @@ class Lahore3DRenderer:
         glEnable(GL_LIGHTING)
 
     def render_ground(self, model: Lahore3DModel):
-        """Render ground plane with zone indicators"""
+
         if not self.show_ground:
             return
 
@@ -408,7 +418,6 @@ class Lahore3DRenderer:
         glPopMatrix()
 
     def render_city_boundary(self, model: Lahore3DModel):
-        """Render city boundary visualization"""
         if not self.show_ground:
             return
 
@@ -422,7 +431,6 @@ class Lahore3DRenderer:
         city_min_y = model.min_y if model.min_y < model.max_y else -600
         city_max_y = model.max_y if model.max_y > model.min_y else 600
 
-        # Add buffer
         buffer = 50
         city_min_x -= buffer
         city_max_x += buffer
@@ -446,13 +454,12 @@ class Lahore3DRenderer:
         glPopMatrix()
 
     def render_building(self, building: Building3D):
-        """Render a single building"""
         if not self.show_buildings:
             return
 
         glPushMatrix()
 
-        # Set color with material properties
+        # Set color
         glColor3f(*building.color)
         glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, (*building.color, 1.0))
         glMaterialfv(GL_FRONT, GL_SPECULAR, (0.5, 0.5, 0.5, 1.0))
@@ -464,7 +471,7 @@ class Lahore3DRenderer:
         else:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
-        # Draw building faces
+        # Draw building
         for face in building.faces:
             glBegin(GL_QUADS)
             for vertex_index in face:
@@ -481,7 +488,6 @@ class Lahore3DRenderer:
         glPopMatrix()
 
     def render_canyon(self, canyon: Canyon3D, model: Lahore3DModel = None):
-        """Render a single canyon - FIXED TO PREVENT DOUBLE RENDERING"""
         if not self.show_canyons or len(canyon.centerline) < 2:
             return
 
@@ -491,15 +497,14 @@ class Lahore3DRenderer:
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        # Bright colors based on threat level WITH ALPHA TRANSPARENCY
         if canyon.threat_level == 'high':
-            main_color = (1.0, 0.3, 0.3, 0.7)  # Semi-transparent red
+            main_color = (1.0, 0.3, 0.3, 0.7)  # red
         elif canyon.threat_level == 'medium':
-            main_color = (1.0, 0.7, 0.3, 0.7)  # Semi-transparent orange
+            main_color = (1.0, 0.7, 0.3, 0.7)  #orange
         else:
-            main_color = (0.3, 1.0, 0.3, 0.7)  # Semi-transparent green
+            main_color = (0.3, 1.0, 0.3, 0.7)  # green
 
-        # Draw canyon as extruded shape
+        # Draw canyon
         for i in range(len(canyon.centerline) - 1):
             start = canyon.centerline[i]
             end = canyon.centerline[i + 1]
@@ -519,7 +524,7 @@ class Lahore3DRenderer:
             glColor4f(*main_color)
             glBegin(GL_QUADS)
 
-            # Top face
+            #Top face
             glVertex3f(start[0] - perp_x, start[1] - perp_y, start[2] + canyon.depth)
             glVertex3f(start[0] + perp_x, start[1] + perp_y, start[2] + canyon.depth)
             glVertex3f(end[0] + perp_x, end[1] + perp_y, end[2] + canyon.depth)
@@ -531,7 +536,7 @@ class Lahore3DRenderer:
             glVertex3f(end[0] + perp_x, end[1] + perp_y, end[2])
             glVertex3f(end[0] - perp_x, end[1] - perp_y, end[2])
 
-            # Side faces for better 3D effect
+            #Side faces for better 3D effect
             glVertex3f(start[0] - perp_x, start[1] - perp_y, start[2])
             glVertex3f(start[0] - perp_x, start[1] - perp_y, start[2] + canyon.depth)
             glVertex3f(end[0] - perp_x, end[1] - perp_y, end[2] + canyon.depth)
@@ -550,7 +555,6 @@ class Lahore3DRenderer:
         glPopMatrix()
 
     def render_threat(self, threat: Threat3D):
-        """Render a single threat"""
         if not self.show_threats:
             return
 
@@ -576,8 +580,6 @@ class Lahore3DRenderer:
 
         glColor3f(*color)
         glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, (*color, 1.0))
-
-        # Draw as a sphere
         quadric = gluNewQuadric()
         gluSphere(quadric, threat.size * pulse_factor, 12, 12)
         gluDeleteQuadric(quadric)
@@ -585,7 +587,6 @@ class Lahore3DRenderer:
         glPopMatrix()
 
     def render_asset(self, asset: Asset3D):
-        """Render a single defended asset"""
         if not self.show_assets:
             return
 
@@ -594,12 +595,10 @@ class Lahore3DRenderer:
         # Position
         x, y, z = asset.position
         glTranslatef(x, y, z)
-
-        # Set color
         glColor3f(*asset.color)
         glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, (*asset.color, 1.0))
 
-        # Draw as a pyramid
+        # Draw pyramid
         size = asset.size
 
         glBegin(GL_TRIANGLES)
@@ -645,7 +644,7 @@ class Lahore3DRenderer:
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
 
-        # Enable lighting
+        #lighting
         glEnable(GL_LIGHTING)
         glEnable(GL_LIGHT0)
         glEnable(GL_COLOR_MATERIAL)
@@ -679,8 +678,60 @@ class Lahore3DRenderer:
         glMatrixMode(GL_MODELVIEW)
         glPopAttrib()
 
+    def render_radar_pulses(self):
+        """Render simple radar pulses as expanding spheres from good drones"""
+        if not self.good_drone_controller or not self.show_good_drones or not self.show_radar_pulses:
+            return
+
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+
+        # Set up for wireframe
+        glDisable(GL_LIGHTING)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glDepthMask(GL_FALSE)
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+
+        # Render pulses for each drone
+        for drone in self.good_drone_controller.drones:
+            if not hasattr(drone, 'radar_system'):
+                continue
+
+            radar = drone.radar_system
+            x, y, z = drone.position
+
+            # Draw pulse
+            for i, pulse_radius in enumerate(radar.radar_pulse_radii):
+                progress = pulse_radius / 300.0  # 300m max range
+                r = 0.0
+                g = 1.0 - progress
+                b = progress
+                alpha = 0.7 - (progress * 0.6)  # Fade out
+
+                glColor4f(r, g, b, alpha)
+
+                # Draw sphere at drone position
+                glPushMatrix()
+                glTranslatef(x, y, z)
+
+                quadric = gluNewQuadric()
+                gluQuadricDrawStyle(quadric, GLU_LINE)
+                gluSphere(quadric, pulse_radius, 12, 6)  # Simple wireframe sphere
+                gluDeleteQuadric(quadric)
+
+                glPopMatrix()
+
+        # Restore OpenGL state
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+        glDepthMask(GL_TRUE)
+        glDisable(GL_BLEND)
+        glEnable(GL_LIGHTING)
+        glPopMatrix()
+        glPopAttrib()
+
     def update_enemies(self, delta_time: float):
-        """Update enemy drone positions with consistent speed"""
         if self.bad_drone_controller:
             # Update bad drones
             self.bad_drone_controller.update_enemies(delta_time)
@@ -694,7 +745,6 @@ class Lahore3DRenderer:
                 x, y, z = enemy.position
                 vx, vy, vz = enemy.velocity
 
-                # MATCH: position += velocity * delta_time
                 new_x = x + vx * delta_time
                 new_y = y + vy * delta_time
                 new_z = z + vz * delta_time
@@ -711,7 +761,7 @@ class Lahore3DRenderer:
                 enemy.velocity = (vx, vy, vz)
 
     def render_bad_drones(self):
-        """Render enemy drones as RED spheres"""
+        """Render enemy drones as red spheres"""
         if not self.bad_drone_controller or not self.show_threats:
             return
 
@@ -741,17 +791,13 @@ class Lahore3DRenderer:
             x, y, z = enemy.position
             glTranslatef(x, y, z)
 
-            # Set BRIGHT RED color with pulsing effect
             current_time = time.time()
             pulse_factor = 0.9 + 0.1 * math.sin(current_time * 4)  # Gentle pulse
-
-            # Use enemy's red color (all enemies are red now)
             r, g, b = enemy.color
             glColor3f(r * pulse_factor, g * pulse_factor, b * pulse_factor)
             glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE,
                          (r * pulse_factor, g * pulse_factor, b * pulse_factor, 1.0))
 
-            # Draw as a sphere
             quadric = gluNewQuadric()
             gluSphere(quadric, enemy.size, 16, 16)
             gluDeleteQuadric(quadric)
@@ -764,8 +810,6 @@ class Lahore3DRenderer:
         glPopAttrib()
 
     def render_hud(self, model: Lahore3DModel):
-        """Render Heads-Up Display"""
-        # Switch to 2D orthographic projection
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
@@ -773,29 +817,24 @@ class Lahore3DRenderer:
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
         glLoadIdentity()
-
-        # Disable lighting for HUD
         glDisable(GL_LIGHTING)
 
-        # Create semi-transparent background for text
+        #  semi transparent background for text
         s = pygame.Surface((250, 180), pygame.SRCALPHA)
         s.fill((0, 0, 0, 180))
         self.screen.blit(s, (5, 5))
 
-        s = pygame.Surface((205, 400), pygame.SRCALPHA)
+        s = pygame.Surface((205, 430), pygame.SRCALPHA)
         s.fill((0, 0, 0, 180))
         self.screen.blit(s, (self.screen_width - 210, 5))
 
-        # Good drone panel
         if self.good_drone_controller and self.show_good_drones:
             s = pygame.Surface((250, 100), pygame.SRCALPHA)
             s.fill((0, 20, 0, 180))
             self.screen.blit(s, (5, self.screen_height - 110))
-
-        # Render text
         y_offset = 20
 
-        # Statistics
+        #stats
         stats_text = [
             "LAHORE 3D DEFENSE SIMULATION",
             f"Buildings: {model.stats.get('total_buildings', 0)} [B]",
@@ -825,6 +864,7 @@ class Lahore3DRenderer:
                 "GOOD DRONES [D]",
                 f"Drones: {active_drones}",
                 f"Enemies: {enemy_count}",
+                f"Radar: {'ON' if self.show_radar_pulses else 'OFF'} [P]",
                 f"Press 'M' for report",
                 f"Press 'I' to init"
             ]
@@ -836,7 +876,6 @@ class Lahore3DRenderer:
                 self.screen.blit(text_surface, (15, y_offset_drone))
                 y_offset_drone += 22
 
-        # Controls panel
         controls_text = [
             "CONTROLS:",
             "Mouse Drag: Rotate",
@@ -846,6 +885,7 @@ class Lahore3DRenderer:
             "T: Threats",
             "A: Assets",
             "D: Drones",
+            "P: Radar Pulses",
             "I: Init Drones",
             "M: ASDA/LSTM Report",
             "W: Wireframe",
@@ -862,7 +902,6 @@ class Lahore3DRenderer:
             self.screen.blit(text_surface, (self.screen_width - 200, y_offset))
             y_offset += 22
 
-        # Status indicators
         status_colors = {
             True: (0, 255, 0),
             False: (255, 100, 100)
@@ -874,6 +913,7 @@ class Lahore3DRenderer:
             f"Threats: {'ON' if self.show_threats else 'OFF'}",
             f"Assets: {'ON' if self.show_assets else 'OFF'}",
             f"Drones: {'ON' if self.show_good_drones else 'OFF'}",
+            f"Radar: {'ON' if self.show_radar_pulses else 'OFF'}",
             f"Wireframe: {'ON' if self.show_wireframe else 'OFF'}",
             f"Ground: {'ON' if self.show_ground else 'OFF'}",
             f"Axes: {'ON' if self.show_axes else 'OFF'}"
@@ -885,24 +925,22 @@ class Lahore3DRenderer:
             self.show_threats,
             self.show_assets,
             self.show_good_drones,
+            self.show_radar_pulses,
             self.show_wireframe,
             self.show_ground,
             self.show_axes
         ]
 
-        y_offset = 340
+        y_offset = 370
         for i, (text, value) in enumerate(zip(status_text, status_values)):
             color = status_colors[value]
             text_surface = self.small_font.render(text, True, color)
             self.screen.blit(text_surface, (self.screen_width - 200, y_offset))
             y_offset += 22
 
-        # Camera info
         cam_text = f"Camera: X={self.camera_angle_x:.0f}°, Y={self.camera_angle_y:.0f}°"
         text_surface = self.small_font.render(cam_text, True, (255, 200, 200))
         self.screen.blit(text_surface, (15, self.screen_height - 30))
-
-        # Restore OpenGL state
         glEnable(GL_LIGHTING)
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()
@@ -910,7 +948,6 @@ class Lahore3DRenderer:
         glPopMatrix()
 
     def calculate_fps(self):
-        """Calculate frames per second"""
         self.frame_count += 1
         current_time = time.time()
         if current_time - self.last_fps_time > 1.0:
@@ -919,7 +956,6 @@ class Lahore3DRenderer:
             self.last_fps_time = current_time
 
     def render(self, model: Lahore3DModel):
-        """Main render function"""
         # Clear screen
         glClearColor(0.08, 0.10, 0.15, 1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -927,17 +963,15 @@ class Lahore3DRenderer:
         # Setup projection
         self.setup_projection()
 
-        # Update camera
+        #Update camera
         self.update_camera()
 
-        # Update drones (silently - no debug output)
+        #update drones
         if self.good_drone_controller and self.show_good_drones:
-            # Update enemies first
             self.update_enemies(delta_time=0.016)
             # Then update good drones
             self.good_drone_controller.update_drones(delta_time=0.016)
 
-        # Update model threats (if not using bad drone controller)
         if not self.bad_drone_controller:
             self.update_threats(model, 0.016)
 
@@ -946,81 +980,68 @@ class Lahore3DRenderer:
         self.render_city_boundary(model)
         self.render_axes()
 
-        # Render buildings
+        #Rendering
         for building in model.buildings:
             self.render_building(building)
 
-        # Render assets
         for asset in model.assets:
             self.render_asset(asset)
 
-        # Render canyons
         for canyon in model.canyons:
             self.render_canyon(canyon, model)  # Pass model as parameter
 
-        # Render good drones
+        self.render_radar_pulses()
+
         if self.good_drone_controller and self.show_good_drones:
             self.render_good_drones()
 
-        # RENDER BAD DRONES (ENEMIES) - THIS IS THE KEY FIX!
+        #render bad drones
         if self.bad_drone_controller and self.bad_drone_controller.enemies and self.show_threats:
-            # Use the new render_bad_drones method
             self.render_bad_drones()
         else:
-            # Fallback to original threats if bad drone controller not available
             for threat in model.threats:
                 self.render_threat(threat)
 
-        # Render HUD
         self.render_hud(model)
 
-        # Update display
+        # Update
         pygame.display.flip()
-
-        # Calculate FPS
         self.calculate_fps()
 
     def update_threats(self, model: Lahore3DModel, delta_time: float):
-        """Update threat positions for animation (if not using bad drone controller)"""
         current_time = time.time()
         if current_time - self.last_threat_update > self.threat_update_interval:
-            # Get city bounds from model
+            #  city bounds
             city_min_x = model.min_x if model.min_x < model.max_x else -600
             city_max_x = model.max_x if model.max_x > model.min_x else 600
             city_min_y = model.min_y if model.min_y < model.max_y else -600
             city_max_y = model.max_y if model.max_y > model.min_y else 600
 
-            # Add buffer to bounds
-            buffer = 50
+            buffer = 50 #buffer zone for saftey
             city_min_x -= buffer
             city_max_x += buffer
             city_min_y -= buffer
             city_max_y += buffer
 
             for threat in model.threats:
-                # Update position based on velocity
+                # Update position
                 x, y, z = threat.position
                 vx, vy, vz = threat.velocity
-
-                # Calculate new position
                 new_x = x + vx * 20
                 new_y = y + vy * 20
                 new_z = max(50, min(z + vz * 20, 300))
 
-                # Boundary checking and bouncing
                 bounce_factor = 0.8
 
-                # X boundary
-                if new_x < city_min_x or new_x > city_max_x:
-                    vx = -vx * bounce_factor
-                    new_x = max(city_min_x, min(new_x, city_max_x))
-
-                # Y boundary
                 if new_y < city_min_y or new_y > city_max_y:
                     vy = -vy * bounce_factor
                     new_y = max(city_min_y, min(new_y, city_max_y))
 
-                # Z boundary (altitude)
+                if new_x < city_min_x or new_x > city_max_x:
+                    vx = -vx * bounce_factor
+                    new_x = max(city_min_x, min(new_x, city_max_x))
+
+
                 if new_z < 30 or new_z > 400:
                     vz = -vz * bounce_factor
                     new_z = max(30, min(new_z, 400))
@@ -1040,31 +1061,22 @@ class Lahore3DRenderer:
             self.last_threat_update = current_time
 
     def run(self, model: Lahore3DModel):
-        """Main render loop"""
         clock = pygame.time.Clock()
         running = True
 
-        print("\nStarting 3D Visualization...")
-        print("=" * 50)
         print("Controls:")
         print("  Mouse Drag: Rotate camera")
         print("  Scroll: Zoom in/out")
         print("  B/C/T/A: Toggle Buildings/Canyons/Threats/Assets")
         print("  D: Toggle Good Drones")
+        print("  P: Toggle Radar Pulses")
         print("  I: Initialize Drones")
         print("  M: Show ASDA/LSTM Report")
         print("  ESC: Exit")
-        print("=" * 50)
 
         while running:
-            # Handle events
             running = self.handle_events()
-
-            # Render frame
             self.render(model)
-
-            # Cap at 60 FPS
-            clock.tick(60)
+            clock.tick(120)
 
         pygame.quit()
-        print("\nVisualization complete!")

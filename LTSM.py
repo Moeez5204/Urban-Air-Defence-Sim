@@ -3,18 +3,17 @@ import torch
 import torch.nn as nn
 import numpy as np
 import json
-from typing import List, Dict, Tuple
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 import torch.optim as optim
 import warnings
+import os
 
-warnings.filterwarnings('ignore')
 
 
 @dataclass
 class TopologicalFeatures:
-    """Simple container for topological feature data"""
+   #topological features
     feature_id: str
     normalized_persistence: float
     distance_to_centerline: float
@@ -24,13 +23,10 @@ class TopologicalFeatures:
 
 
 class SimpleTopologyContextMapper:
-    """Simplified context mapper that reads directly from JSON"""
-
     def __init__(self):
         self.strategic_database = None
 
     def load_strategic_data(self, filename='strategic_features_3.1.4.json'):
-        """Load strategic features directly from JSON"""
         try:
             with open(filename, 'r') as f:
                 data = json.load(f)
@@ -43,7 +39,6 @@ class SimpleTopologyContextMapper:
             return None
 
     def get_current_features(self, target_position, timestamp):
-        """Get topological features for current position - simplified"""
         if not self.strategic_database:
             return self._get_default_features()
 
@@ -69,7 +64,7 @@ class SimpleTopologyContextMapper:
                         concealment_value=canyon['concealment_value']
                     )
 
-        # Check obstacles if no canyon found
+        #check obstacles if no canyon found
         if not best_features:
             for obstacle in self.strategic_database['obstacles']:
                 obstacle_center = np.array([obstacle.get('birth', 0), obstacle.get('death', 0)])
@@ -88,7 +83,6 @@ class SimpleTopologyContextMapper:
         return best_features or self._get_default_features()
 
     def _get_default_features(self):
-        """Default features for open areas"""
         return TopologicalFeatures(
             feature_id='open_area',
             normalized_persistence=0.1,
@@ -100,9 +94,6 @@ class SimpleTopologyContextMapper:
 
 
 class BetterTopologyAwareLSTM(nn.Module):
-    """
-    Improved LSTM with better architecture
-    """
 
     def __init__(self, input_size=11, hidden_size=48, num_layers=2, output_size=3):
         super(BetterTopologyAwareLSTM, self).__init__()
@@ -127,26 +118,27 @@ class BetterTopologyAwareLSTM(nn.Module):
 
 
 class ImprovedLSTMPredictor:
-    """
-    Improved LSTM predictor with better training
-    """
+
 
     def __init__(self):
         self.context_mapper = SimpleTopologyContextMapper()
         self.model = None
         self.sequence_length = 5
         self.prediction_horizon = 1
+        # Store normalization parameters for later use
+        self.pos_mean = None
+        self.pos_std = None
+        self.feat_mean = None
+        self.feat_std = None
 
     def load_all_data(self):
-        """Load all JSON data from previous phases"""
         print("Loading existing data from JSON files...")
 
-        # Load strategic features
         strategic_data = self.context_mapper.load_strategic_data()
 
-        # Load Kalman filter results
+        # Kalman filter results
         try:
-            with open('JSON files/urban_tracking_data.json', 'r') as f:
+            with open('urban_tracking_data.json', 'r') as f:
                 kalman_data = json.load(f)
             print(f"✓ Loaded {len(kalman_data['complete_tracking_history'])} tracking steps")
 
@@ -158,14 +150,12 @@ class ImprovedLSTMPredictor:
                   f"Z({positions[:, 2].min():.1f} to {positions[:, 2].max():.1f})")
 
         except FileNotFoundError:
-            print("❌ urban_tracking_data.json not found")
+            print("urban_tracking_data.json not found")
             return None, None
 
         return strategic_data, kalman_data
 
     def create_better_training_data(self, kalman_data, num_sequences=50):
-        """Create better normalized training data"""
-        print("Creating better training sequences...")
 
         sequences = []
         targets = []
@@ -175,7 +165,7 @@ class ImprovedLSTMPredictor:
             print("Not enough real data, creating better synthetic sequences...")
             return self._create_better_synthetic_data(num_sequences)
 
-        # Collect all data for normalization
+        #collect data for normalisation
         all_positions = []
         all_velocities = []
         all_features = []
@@ -203,29 +193,31 @@ class ImprovedLSTMPredictor:
         all_velocities = np.array(all_velocities)
         all_features = np.array(all_features)
 
-        # Calculate normalization parameters
-        pos_mean, pos_std = all_positions.mean(axis=0), all_positions.std(axis=0)
+        #normalization parameters
+        self.pos_std = all_positions.std(axis=0)
+        self.pos_mean = all_positions.mean(axis=0)
         vel_mean, vel_std = all_velocities.mean(axis=0), all_velocities.std(axis=0)
-        feat_mean, feat_std = all_features.mean(axis=0), all_features.std(axis=0)
+        self.feat_mean = all_features.mean(axis=0)
+        self.feat_std = all_features.std(axis=0)
 
-        # Avoid division by zero
-        pos_std = np.where(pos_std == 0, 1.0, pos_std)
+        # avoid divide by 0
+        self.pos_std = np.where(self.pos_std == 0, 1.0, self.pos_std)
         vel_std = np.where(vel_std == 0, 1.0, vel_std)
-        feat_std = np.where(feat_std == 0, 1.0, feat_std)
+        self.feat_std = np.where(self.feat_std == 0, 1.0, self.feat_std)
 
         # Create sequences with normalization
         for i in range(len(tracking_history) - self.sequence_length):
             sequence = []
 
-            for j in range(self.sequence_length):
+            for j in range(self.sequence_length):  #Normalize features
+
                 features = all_features[i + j]
-                # Normalize features
-                normalized_features = (features - feat_mean) / feat_std
+                normalized_features = (features - self.feat_mean) / self.feat_std
                 sequence.append(normalized_features)
 
             # Normalize target
             target_position = all_positions[i + self.sequence_length]
-            normalized_target = (target_position - pos_mean) / pos_std
+            normalized_target = (target_position - self.pos_mean) / self.pos_std
 
             sequences.append(sequence)
             targets.append(normalized_target)
@@ -233,11 +225,11 @@ class ImprovedLSTMPredictor:
             if len(sequences) >= num_sequences:
                 break
 
-        # Add synthetic data if needed
+        # Add fake data if needed
         if len(sequences) < num_sequences:
             print(f"Adding {num_sequences - len(sequences)} synthetic sequences...")
             synth_sequences, synth_targets = self._create_better_synthetic_data(
-                num_sequences - len(sequences), pos_mean, pos_std, feat_mean, feat_std)
+                num_sequences - len(sequences), self.pos_mean, self.pos_std, self.feat_mean, self.feat_std)
             sequences.extend(synth_sequences)
             targets.extend(synth_targets)
 
@@ -247,16 +239,16 @@ class ImprovedLSTMPredictor:
         print(f"Created {len(sequences)} training sequences")
         print(f"Input shape: {sequences.shape}, Target shape: {targets.shape}")
 
-        return sequences, targets, (pos_mean, pos_std, feat_mean, feat_std)
+        return sequences, targets, (self.pos_mean, self.pos_std, self.feat_mean, self.feat_std)
 
-    # Add this improved synthetic data generation method to the class:
 
     def _create_better_synthetic_data(self, num_sequences, pos_mean=None, pos_std=None, feat_mean=None, feat_std=None):
-        """Create realistic synthetic data with proper urban speeds"""
-        sequences = []
+        #Create realistic synthetic data with proper urban speeds
         targets = []
 
-        # Use provided normalization or create reasonable defaults
+        sequences = []
+
+        # use  normalization or create reasonable defaults
         if pos_mean is None:
             pos_mean = np.array([150, 25, 50])
             pos_std = np.array([100, 50, 20])
@@ -267,27 +259,27 @@ class ImprovedLSTMPredictor:
         for seq_idx in range(num_sequences):
             sequence = []
 
-            # Choose a realistic scenario with proper urban speeds
+            #realistic scenario with proper urban speeds
             scenario = seq_idx % 4
-            if scenario == 0:  # Canyon following (slower, more precise)
+            if scenario == 0:  # Canyon following
                 start_pos = np.array([50, 10, 45])
-                velocity = np.array([12, 1, 0])  # ~43 km/h in canyons
+                velocity = np.array([12, 1, 0])
                 topo_features = [0.8, 0.7, 0.1, 0.8, 0.9]
-            elif scenario == 1:  # Open area (faster)
+            elif scenario == 1:  #Open area
                 start_pos = np.array([200, 50, 60])
-                velocity = np.array([18, 4, 0.5])  # ~65 km/h in open areas
+                velocity = np.array([18, 4, 0.5])
                 topo_features = [0.2, 0.1, 0.8, 0.3, 0.1]
-            elif scenario == 2:  # Obstacle avoidance (maneuvering)
+            elif scenario == 2:  #obstacle avoidance
                 start_pos = np.array([100, 30, 50])
-                velocity = np.array([10, -2, -0.5])  # ~36 km/h near obstacles
+                velocity = np.array([10, -2, -0.5])
                 topo_features = [0.5, 0.5, 0.3, 0.7, 0.6]
-            else:  # Urban transit (medium speed)
+            else:  # Urban transit
                 start_pos = np.array([120, 40, 55])
-                velocity = np.array([15, 3, 0.2])  # ~54 km/h typical urban
+                velocity = np.array([15, 3, 0.2])
                 topo_features = [0.6, 0.4, 0.5, 0.6, 0.4]
 
             for step in range(self.sequence_length + 1):
-                # Add small random variations to velocity
+                #random variations to velocity
                 current_vel = velocity + np.random.normal(0, 0.3, 3)
                 current_pos = start_pos + current_vel * step * 1.0  # 1 second steps
 
@@ -307,21 +299,18 @@ class ImprovedLSTMPredictor:
         return sequences, targets
 
     def train_better_model(self, sequences, targets, normalization_params, epochs=100):
-        """Better training with validation and early stopping"""
-        print("Training Better Topology-Aware LSTM...")
 
-        # Split data for validation
+        # split data
         split_idx = int(0.8 * len(sequences))
         train_seq, val_seq = sequences[:split_idx], sequences[split_idx:]
         train_tar, val_tar = targets[:split_idx], targets[split_idx:]
 
-        # Convert to tensors
         train_seq_tensor = torch.FloatTensor(train_seq)
         train_tar_tensor = torch.FloatTensor(train_tar)
         val_seq_tensor = torch.FloatTensor(val_seq)
         val_tar_tensor = torch.FloatTensor(val_tar)
 
-        # Initialize model
+        #Initialise
         self.model = BetterTopologyAwareLSTM(
             input_size=11,
             output_size=3
@@ -337,7 +326,6 @@ class ImprovedLSTMPredictor:
         patience = 0
 
         for epoch in range(epochs):
-            # Training
             self.model.train()
             optimizer.zero_grad()
 
@@ -346,7 +334,6 @@ class ImprovedLSTMPredictor:
             train_loss.backward()
             optimizer.step()
 
-            # Validation
             self.model.eval()
             with torch.no_grad():
                 val_pred = self.model(val_seq_tensor)
@@ -355,10 +342,7 @@ class ImprovedLSTMPredictor:
             train_losses.append(train_loss.item())
             val_losses.append(val_loss.item())
 
-            # Learning rate scheduling
             scheduler.step(val_loss)
-
-            # Early stopping
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 patience = 0
@@ -374,36 +358,143 @@ class ImprovedLSTMPredictor:
                 print(f"Early stopping at epoch {epoch}")
                 break
 
-        # Load best model
+        #load best model
         self.model.load_state_dict(torch.load('best_lstm_model.pth'))
 
-        # Plot training
-        plt.figure(figsize=(10, 4))
+        print("LTSM on now")
+
+        self._save_normalization_params(normalization_params)
+
+        # save model
+        self._save_model_info()
+
+        # plot the training data
+        plt.figure(figsize=(11, 5))
         plt.plot(train_losses, label='Training Loss')
         plt.plot(val_losses, label='Validation Loss')
         plt.title('LSTM Training Progress')
         plt.xlabel('Epoch')
         plt.ylabel('MSE Loss')
         plt.legend()
-        plt.grid(True)
         plt.yscale('log')
         plt.show()
 
         print(f"Best validation loss: {best_val_loss:.6f}")
         return self.model, normalization_params
 
+    def _save_normalization_params(self, normalization_params):
+        pos_mean, pos_std, feat_mean, feat_std = normalization_params
+
+        norm_data = {
+            'pos_mean': pos_mean.tolist(),
+            'pos_std': pos_std.tolist(),
+            'feat_mean': feat_mean.tolist(),
+            'feat_std': feat_std.tolist(),
+            'sequence_length': self.sequence_length,
+            'prediction_horizon': self.prediction_horizon,
+            'timestamp': str(np.datetime64('now'))
+        }
+
+        with open('best_lstm_model_norm.json', 'w') as f:
+            json.dump(norm_data, f, indent=2)
+
+        print("Normalization parameters saved to 'best_lstm_model_norm.json'")
+
+        #save file
+        np.savez('lstm_normalization.npz',
+                 pos_mean=pos_mean,
+                 pos_std=pos_std,
+                 feat_mean=feat_mean,
+                 feat_std=feat_std)
+        print(" Normalization parameters saved to 'lstm_normalization.npz'")
+
+    def _save_model_info(self):
+        model_info = {
+            'model_type': 'BetterTopologyAwareLSTM',
+            'input_size': 11,
+            'hidden_size': 48,
+            'num_layers': 2,
+            'output_size': 3,
+            'sequence_length': self.sequence_length,
+            'prediction_horizon': self.prediction_horizon,
+            'model_file': 'best_lstm_model.pth',
+            'norm_file': 'best_lstm_model_norm.json'
+        }
+
+        with open('lstm_model_info.json', 'w') as f:
+            json.dump(model_info, f, indent=2)
+
+        print("Model info saved to 'lstm_model_info.json'")
+
+    def load_saved_model(self):
+        try:
+            # Load model
+            self.model = BetterTopologyAwareLSTM(input_size=11, output_size=3)
+            self.model.load_state_dict(torch.load('best_lstm_model.pth', map_location='cpu'))
+            self.model.eval()
+
+            # Load normalization parameters
+            if os.path.exists('best_lstm_model_norm.json'):
+                with open('best_lstm_model_norm.json', 'r') as f:
+                    norm_data = json.load(f)
+                self.pos_mean = np.array(norm_data['pos_mean'])
+                self.pos_std = np.array(norm_data['pos_std'])
+                self.feat_mean = np.array(norm_data['feat_mean'])
+                self.feat_std = np.array(norm_data['feat_std'])
+                self.sequence_length = norm_data.get('sequence_length', 5)
+                print("✓ Loaded trained LSTM model with normalization parameters")
+                return True
+            else:
+                print("⚠ Model file found but normalization parameters missing")
+                return False
+        except Exception as e:
+            print(f"⚠ Error loading saved model: {e}")
+            return False
+
+    def predict_next(self, current_position, current_velocity, canyon_affinity=0.5,
+                     topo_features=None, use_history=False, history_positions=None):
+        #predict next posistion
+        if self.model is None:
+            print("Model not loaded. Call load_saved_model() first.")
+            return None
+
+        if self.pos_mean is None or self.feat_mean is None:
+            print("Normalization parameters not loaded.")
+            return None
+
+        try:
+            # feature vector
+            if topo_features is None:
+                topo_features = [0.1, 1.0, 0.3, 0.1]
+
+            features = list(current_position) + list(current_velocity) + [canyon_affinity] + topo_features
+            features = np.array(features)
+            normalized_features = (features - self.feat_mean) / self.feat_std
+            sequence = [normalized_features] * self.sequence_length
+            input_tensor = torch.FloatTensor([sequence])
+
+            # predict
+            with torch.no_grad():
+                normalized_pred = self.model(input_tensor)
+
+                #denormalize
+                predicted_pos = normalized_pred.numpy().flatten() * self.pos_std + self.pos_mean
+
+            return tuple(predicted_pos)
+
+        except Exception as e:
+            print(f"Prediction error: {e}")
+            return None
+
     def demonstrate_better_predictions(self, kalman_data, normalization_params):
-        """Better prediction demonstration with denormalization"""
-        print("\nDemonstrating Improved LSTM Predictions...")
+        print("Demonstrating Improved LSTM Predictions")
 
         tracking_history = kalman_data['complete_tracking_history']
         pos_mean, pos_std, feat_mean, feat_std = normalization_params
 
         if len(tracking_history) < self.sequence_length + 1:
-            print("Not enough real data for demonstration")
+            print("Not enough data")
             return
-
-        # Prepare real sequence with normalization
         real_sequence = []
         for i in range(self.sequence_length):
             step = tracking_history[i]
@@ -421,26 +512,25 @@ class ImprovedLSTMPredictor:
                 topo_features.concealment_value
             ]
 
-            # Normalize
-            normalized_features = (np.array(features) - feat_mean) / feat_std
+            normalized_features = (np.array(features) - feat_mean) / feat_std  #normalize
+
             real_sequence.append(normalized_features)
 
-        # Actual next position (denormalized)
+        # actual next posiston
         actual_next = tracking_history[self.sequence_length]['estimated_position']
 
-        # Make prediction
+        #make prediction
         self.model.eval()
         with torch.no_grad():
             test_input = torch.FloatTensor([real_sequence])
             normalized_prediction = self.model(test_input)
 
-            # Denormalize prediction
+            #Denormalize prediction
             predicted_next = normalized_prediction.numpy().flatten() * pos_std + pos_mean
 
-        # Create better visualization
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
 
-        # 1. Position comparison
+        #Position comparison
         labels = ['X', 'Y', 'Z']
         x_pos = np.arange(3)
         width = 0.35
@@ -455,7 +545,7 @@ class ImprovedLSTMPredictor:
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
-        # 2. Error analysis
+        #Error analysis
         errors = np.abs(np.array(predicted_next) - np.array(actual_next))
         total_error = np.linalg.norm(predicted_next - actual_next)
 
@@ -464,7 +554,7 @@ class ImprovedLSTMPredictor:
         ax2.set_title(f'Prediction Errors\nTotal Error: {total_error:.2f}m')
         ax2.grid(True, alpha=0.3)
 
-        # 3. Trajectory plot
+        #Trajectory plot
         recent_positions = [step['estimated_position'] for step in tracking_history[:self.sequence_length + 1]]
         recent_positions = np.array(recent_positions)
 
@@ -477,7 +567,7 @@ class ImprovedLSTMPredictor:
         ax3.legend()
         ax3.grid(True, alpha=0.3)
 
-        # 4. Text summary
+        #Text summary
         ax4.axis('off')
         summary_text = f"""
 Prediction Results:
@@ -502,7 +592,6 @@ Improvement: {(69.25 - total_error) / 69.25 * 100:.1f}% better than before
         return predicted_next, actual_next
 
     def analyze_urban_behavior(self, normalization_params):
-        """Better behavior analysis with denormalization"""
         print("\nAnalyzing Urban Behavior Patterns...")
 
         if self.model is None:
@@ -521,17 +610,16 @@ Improvement: {(69.25 - total_error) / 69.25 * 100:.1f}% better than before
 
         self.model.eval()
         print("Behavior Analysis Results:")
-        print("=" * 50)
 
         for scenario_name, features in scenarios.items():
-            # Normalize input
+            #Normalize input
             normalized_features = (np.array(features) - feat_mean) / feat_std
             test_sequence = [normalized_features] * self.sequence_length
             test_input = torch.FloatTensor([test_sequence])
 
             with torch.no_grad():
                 normalized_prediction = self.model(test_input)
-                # Denormalize prediction
+                #deenormalize prediction
                 predicted_pos = normalized_prediction.numpy().flatten() * pos_std + pos_mean
 
             movement_vector = predicted_pos - np.array(features[:3])
@@ -542,49 +630,33 @@ Improvement: {(69.25 - total_error) / 69.25 * 100:.1f}% better than before
             print(f"  Predicted: [{predicted_pos[0]:.1f}, {predicted_pos[1]:.1f}, {predicted_pos[2]:.1f}]")
             print(f"  Movement: [{movement_vector[0]:.1f}, {movement_vector[1]:.1f}, {movement_vector[2]:.1f}]")
             print(f"  Speed: {speed:.1f} m/s")
-            print()
 
 
 def run_phase_3_2_3():
-    """
-    Run Phase 3.2.3: Improved LSTM Network Extension
-    """
-    print("=" * 50)
+
     print("PHASE 3.2.3: IMPROVED LSTM Network Extension")
-    print("=" * 50)
 
-    # Initialize predictor
+    # Initialize
     lstm_predictor = ImprovedLSTMPredictor()
-
-    # Load data directly from JSON files
     strategic_data, kalman_data = lstm_predictor.load_all_data()
 
     if kalman_data is None:
-        print("Cannot proceed without tracking data")
+        print(" can not go on without data")
         return
 
-    # Create better training data with normalization
+    # make training data
     sequences, targets, norm_params = lstm_predictor.create_better_training_data(kalman_data, num_sequences=50)
 
-    # Train the improved model
+    # train
     trained_model, norm_params = lstm_predictor.train_better_model(sequences, targets, norm_params, epochs=100)
 
-    # Demonstrate better predictions
     predicted, actual = lstm_predictor.demonstrate_better_predictions(kalman_data, norm_params)
 
-    # Analyze behavior
+    # Analyse
     lstm_predictor.analyze_urban_behavior(norm_params)
-
-    print("\n" + "=" * 50)
-    print("PHASE 3.2.3 COMPLETE!")
-    print("=" * 50)
-    print("✓ Improved LSTM trained with normalization")
-    print("✓ Better prediction accuracy")
-    print("✓ Realistic urban behavior patterns learned")
 
     return lstm_predictor
 
 
 if __name__ == "__main__":
     run_phase_3_2_3()
-

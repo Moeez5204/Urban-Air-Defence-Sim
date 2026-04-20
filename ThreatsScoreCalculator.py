@@ -8,7 +8,6 @@ from scipy.spatial import KDTree
 
 @dataclass
 class ThreatParameters:
-    """Configuration parameters for threat scoring"""
     distance_weight: float = 0.30
     approach_angle_weight: float = 0.15
     speed_weight: float = 0.20
@@ -20,7 +19,6 @@ class ThreatParameters:
 
 @dataclass
 class TargetState:
-    """Current state of a potential threat"""
     position: np.ndarray
     velocity: np.ndarray
     timestamp: float
@@ -31,7 +29,6 @@ class TargetState:
 
 @dataclass
 class DefendedAsset:
-    """Asset that needs protection"""
     position: np.ndarray
     asset_id: str
     asset_name: str
@@ -43,24 +40,22 @@ class DefendedAsset:
 
 
 class UrbanThreatContext:
-    """Analyzes urban topological context for threat assessment"""
+    #Analyse urban topological
 
     def __init__(self, strategic_features_file='lahore_strategic_features.json'):
-        self.strategic_features = self._load_lahore_strategic_features(strategic_features_file)
+        self.strategic_features = self.load_lahore_strategic_features(strategic_features_file)
         self.feature_tree = None
-        self._build_feature_tree()
+        self.build_feature_tree()
 
-    def _load_lahore_strategic_features(self, filename):
-        """Load Lahore-specific strategic topological features"""
+    def load_lahore_strategic_features(self, filename):
         try:
             with open(filename, 'r') as f:
                 data = json.load(f)
             return data['strategic_features']
         except FileNotFoundError:
-            return self._create_default_lahore_features()
+            return self.create_default_lahore_features()
 
-    def _create_default_lahore_features(self):
-        """Create default Lahore urban features"""
+    def create_default_lahore_features(self):
         return {
             'canyons': [
                 {
@@ -86,10 +81,8 @@ class UrbanThreatContext:
             ]
         }
 
-    def _build_feature_tree(self):
-        """Build KD-tree for fast feature proximity queries"""
-        feature_points = []
-        feature_data = []
+    def build_feature_tree(self):
+        feature_points,feature_data= [], []
 
         for canyon in self.strategic_features['canyons']:
             if 'centerline' in canyon:
@@ -117,9 +110,9 @@ class UrbanThreatContext:
             self.feature_data = feature_data
 
     def get_urban_context(self, position: np.ndarray, max_distance: float = 0.01) -> Dict:
-        """Get urban topological context for a given position"""
+        #Get urban topological context
         if self.feature_tree is None or len(self.feature_data) == 0:
-            return self._get_default_context(position)
+            return self.get_default_context(position)
 
         position_2d = position[:2]
         distances, indices = self.feature_tree.query(position_2d, k=min(3, len(self.feature_data)))
@@ -144,21 +137,19 @@ class UrbanThreatContext:
 
             return context
 
-        return self._get_default_context(position)
+        return self.get_default_context(position)
 
-    def _get_default_context(self, position: np.ndarray) -> Dict:
-        """Get default urban context for open areas"""
+    def get_default_context(self, position: np.ndarray) -> Dict: #get the urban context of the area
         return {
             'type': 'open_area',
             'name': 'open_area',
             'concealment': 0.1,
             'threat_advantage': 0.1,
-            'sector': self._get_lahore_sector(position[:2]),
+            'sector': self.get_lahore_sector(position[:2]),
             'distance_to_feature': float('inf')
         }
 
-    def _get_lahore_sector(self, position: np.ndarray) -> str:
-        """Identify which Lahore sector the position is in"""
+    def get_lahore_sector(self, position: np.ndarray) -> str:
         longitude, latitude = position
 
         if 74.30 <= longitude <= 74.32 and 31.58 <= latitude <= 31.60:
@@ -174,7 +165,6 @@ class UrbanThreatContext:
 
 
 class ThreatScoreCalculator:
-    """Threat assessment system for Lahore"""
 
     def __init__(self, defended_assets: List[DefendedAsset], params: ThreatParameters = None):
         self.params = params or ThreatParameters()
@@ -183,29 +173,28 @@ class ThreatScoreCalculator:
         self.threat_history = []
 
     def calculate_threat_score(self, target: TargetState, asset_id: str = None) -> Dict:
-        """Calculate threat score for a target"""
         if asset_id:
             asset = next((a for a in self.defended_assets if a.asset_id == asset_id), None)
             if asset is None:
                 raise ValueError(f"Asset {asset_id} not found")
-            return self._calculate_single_threat(target, asset)
+            return self.calculate_single_threat(target, asset)
         else:
             max_threat = {'overall_score': 0}
             for asset in self.defended_assets:
-                threat = self._calculate_single_threat(target, asset)
+                threat = self.calculate_single_threat(target, asset)
                 if threat['overall_score'] > max_threat['overall_score']:
                     max_threat = threat
             return max_threat
 
-    def _calculate_single_threat(self, target: TargetState, asset: DefendedAsset) -> Dict:
-        """Calculate threat score against a specific asset"""
-        distance = self._haversine_distance(target.position, asset.position)
-        distance_score = self._calculate_distance_score(distance, asset.critical_radius)
+    def calculate_single_threat(self, target: TargetState, asset: DefendedAsset) -> Dict:
 
-        approach_angle_score = self._calculate_approach_angle_score(target, asset)
+        distance = self.haversine_distance(target.position, asset.position)
+        distance_score = self.calculate_distance_score(distance, asset.critical_radius)
+
+        approach_angle_score = self.calculate_approach_angle_score(target, asset)
 
         speed = np.linalg.norm(target.velocity[:2]) * 111000
-        speed_score = self._calculate_speed_score(speed)
+        speed_score = self.calculate_speed_score(speed)
 
         urban_context = self.urban_context.get_urban_context(target.position)
         urban_context_score = urban_context['threat_advantage']
@@ -235,8 +224,7 @@ class ThreatScoreCalculator:
         self.threat_history.append(threat_data)
         return threat_data
 
-    def _haversine_distance(self, pos1: np.ndarray, pos2: np.ndarray) -> float:
-        """Calculate distance in meters using Haversine formula"""
+    def haversine_distance(self, pos1: np.ndarray, pos2: np.ndarray) -> float:
         lon1, lat1, _ = np.radians(pos1)
         lon2, lat2, _ = np.radians(pos2)
         dlon = lon2 - lon1
@@ -244,8 +232,7 @@ class ThreatScoreCalculator:
         a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
         return 2 * 6371000 * np.arcsin(np.sqrt(a))
 
-    def _calculate_distance_score(self, distance: float, critical_radius: float) -> float:
-        """Calculate normalized distance score (0-1)"""
+    def calculate_distance_score(self, distance: float, critical_radius: float) -> float:
         if distance <= 0:
             return 1.0
         normalized_distance = distance / self.params.critical_distance
@@ -254,27 +241,23 @@ class ThreatScoreCalculator:
             score = min(1.0, score * 1.5)
         return score
 
-    def _calculate_approach_angle_score(self, target: TargetState, asset: DefendedAsset) -> float:
-        """Calculate approach angle score (0-1)"""
+    def calculate_approach_angle_score(self, target: TargetState, asset: DefendedAsset) -> float:
         to_asset = asset.position - target.position
         to_asset_normalized = to_asset / max(np.linalg.norm(to_asset), 1e-6)
         velocity_normalized = target.velocity / max(np.linalg.norm(target.velocity), 1e-6)
         cosine_angle = np.dot(velocity_normalized, to_asset_normalized)
         return max(0, cosine_angle)
 
-    def _calculate_speed_score(self, speed: float) -> float:
-        """Calculate normalized speed score (0-1)"""
+    def calculate_speed_score(self, speed: float) -> float:
         normalized_speed = min(1.0, speed / self.params.critical_speed)
         return 1.0 - np.exp(-normalized_speed * 3)
 
     def assess_multiple_threats(self, targets: List[TargetState]) -> List[Dict]:
-        """Assess threat scores for multiple targets"""
         threats = [self.calculate_threat_score(target) for target in targets]
         threats.sort(key=lambda x: x['overall_score'], reverse=True)
         return threats
 
     def get_threat_level(self, score: float) -> str:
-        """Convert numeric score to threat level"""
         if score >= self.params.max_threat_score * 0.8:
             return "CRITICAL"
         elif score >= self.params.max_threat_score * 0.6:
@@ -287,15 +270,9 @@ class ThreatScoreCalculator:
             return "MINIMAL"
 
     def visualize_threat_assessment(self, targets: List[TargetState]):
-        """Create simplified visualization with 3 key graphs"""
-        print("\nGenerating Simplified Threat Assessment Dashboard...")
 
         fig = plt.figure(figsize=(15, 5))
-
-        # Get threat assessments
         threats = self.assess_multiple_threats(targets)
-
-        # 1. TOP THREATS BAR CHART (Left)
         ax1 = plt.subplot(1, 3, 1)
 
         threat_names = [t['target_id'] for t in threats]
@@ -324,15 +301,14 @@ class ThreatScoreCalculator:
             ax1.text(score + 0.1, bar.get_y() + bar.get_height() / 2,
                      f'{score:.1f}', va='center', fontweight='bold')
 
-        # 2. THREAT COMPONENTS RADAR CHART (Middle)
+        # radaar chart
         ax2 = plt.subplot(1, 3, 2, polar=True)
 
         if threats:
             top_threat = threats[0]
             components = ['Distance', 'Angle', 'Speed', 'Urban']
 
-            # Get component scores (estimated from overall)
-            # In real implementation, you'd store these separately
+            # Get component scores
             urban_ctx = top_threat['urban_context']
             urban_score = urban_ctx['threat_advantage']
             distance_score = max(0.3, min(0.9, 1 - (top_threat['distance_to_asset'] / 2000)))
@@ -351,7 +327,7 @@ class ThreatScoreCalculator:
             ax2.set_title(f'Threat Profile: {top_threat["target_id"]}', pad=20)
             ax2.grid(True)
 
-        # 3. LAHORE SECTOR THREAT MAP (Right)
+        # heat map
         ax3 = plt.subplot(1, 3, 3)
 
         sector_threats = {}
@@ -363,7 +339,7 @@ class ThreatScoreCalculator:
 
         sector_avg = {sector: np.mean(scores) for sector, scores in sector_threats.items()}
 
-        # Create a simple map visualization
+        # mpa visulisastion
         sectors = list(sector_avg.keys())
         sector_scores = list(sector_avg.values())
 
@@ -396,7 +372,6 @@ class ThreatScoreCalculator:
         plt.show()
 
     def export_for_3d(self, filename='lahore_3d_data.json'):
-        """Export data for 3D visualization"""
         assets_3d = []
         for asset in self.defended_assets:
             assets_3d.append({
@@ -438,7 +413,6 @@ class ThreatScoreCalculator:
 
 
 def create_lahore_defended_assets():
-    """Create 10 real Lahore components for defense"""
     return [
         DefendedAsset(np.array([74.3587, 31.5657, 0]), "gov_house", "Governor House", 0.95, 300, "government",
                       sector="Central_Lahore"),
@@ -464,7 +438,6 @@ def create_lahore_defended_assets():
 
 
 def create_lahore_threat_scenarios():
-    """Create realistic threat scenarios for Lahore"""
     return [
         TargetState(np.array([74.3100, 31.5850, 100]), np.array([0.0005, 0.0010, 0]), 0.0, "Walled_City_Drone", "drone",
                     "Walled_City"),
@@ -480,45 +453,26 @@ def create_lahore_threat_scenarios():
 
 
 def main():
-    """Main function to run Lahore threat assessment"""
-    print("=" * 60)
-    print("LAHORE URBAN DEFENSE - THREAT ASSESSMENT")
-    print("=" * 60)
 
-    # Setup
     lahore_assets = create_lahore_defended_assets()
     calculator = ThreatScoreCalculator(lahore_assets)
     threats = create_lahore_threat_scenarios()
-
-    # Run assessment
-    print("\nRunning Threat Assessment...")
-    print("-" * 60)
-
     all_threats = calculator.assess_multiple_threats(threats)
 
-    print("Top Threats:")
+    print("Top threats:")
     for i, threat in enumerate(all_threats[:3], 1):
         level = calculator.get_threat_level(threat['overall_score'])
         print(f"{i}. {threat['target_id']} → {threat['asset_name']}")
         print(f"   Score: {threat['overall_score']:.1f}/10 ({level})")
         print(f"   Sector: {threat['asset_sector']}")
         print(f"   Urban Context: {threat['urban_context']['name']}")
-        print()
 
-    # Generate visualization
     calculator.visualize_threat_assessment(threats)
-
-    # Export for 3D
     export_data = calculator.export_for_3d()
-
-    print("\n" + "=" * 60)
-    print("ASSESSMENT COMPLETE")
-    print("=" * 60)
     print(f"• Assets Protected: {len(lahore_assets)}")
     print(f"• Threats Assessed: {len(threats)}")
     print(f"• Total Records: {len(calculator.threat_history)}")
     print(f"• 3D Data Exported: {len(export_data['threat_data'])} threats")
-    print(f"• File: lahore_3d_data.json")
 
 
 if __name__ == "__main__":

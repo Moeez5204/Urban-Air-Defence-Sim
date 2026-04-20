@@ -1,22 +1,14 @@
-"""
-Lahore 3D Urban Defense Visualization
-Main file with Good Drone Defense System Integration
-"""
-
 import sys
 import os
 from pathlib import Path
-
-# Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 from lahore_model_builder import LahoreModelBuilder
 from lahore_3d_renderer import Lahore3DRenderer
+from conclusion import PostMissionAnalyzer  # Changed import
 
 
 def find_json_files():
-    """Find JSON files in project directory"""
-    project_root = Path(__file__).parent.parent  # Go up from PyGame folder
+    project_root = Path(__file__).parent.parent
 
     json_files = {
         'building_data': None,
@@ -24,10 +16,7 @@ def find_json_files():
         'threat_data': None
     }
 
-    # Check in current directory first
     current_dir = Path(__file__).parent
-
-    # Look for building data
     possible_building_files = [
         'building_data_3.1.1.json',
         'JSON files/building_data_3.1.1.json',
@@ -41,7 +30,6 @@ def find_json_files():
             json_files['building_data'] = str(full_path)
             break
 
-    # Look for strategic features
     possible_strategic_files = [
         'strategic_features_3.1.4.json',
         'JSON files/strategic_features_3.1.4.json',
@@ -55,7 +43,6 @@ def find_json_files():
             json_files['strategic_features'] = str(full_path)
             break
 
-    # Look for threat data
     possible_threat_files = [
         'lahore_3d_data.json',
         'JSON files/lahore_3d_data.json',
@@ -75,38 +62,25 @@ def find_json_files():
 
 
 def test_drone_system():
-    """Test the good drone system independently"""
-    print("\n" + "=" * 60)
-    print("TESTING DRONE DEFENSE SYSTEM")
-    print("=" * 60)
+
 
     try:
-        # Try to import and test
-        print("Attempting to import good drone controller...")
-        from good_drone_controller import test_good_drone_system
+        from good_drone_controller import test_integrated_system
 
-        print("Running drone system test...")
-        controller = test_good_drone_system()
+        print("Running drone system test")
+        controller = test_integrated_system()
 
         if controller:
-            print("\n✓ Drone system test passed!")
-            print(f"✓ {len(controller.drones)} drones initialized")
-            print(f"✓ {controller.engagements} engagements simulated")
-            print(f"✓ {controller.threats_neutralized} threats neutralized")
-            print("\nYou can now run the full visualization with good drones!")
+            print("Drone system test passed!")
             return True
         else:
-            print("\n⚠ Drone system test failed")
+            print("Drone system test failed")
             return False
 
     except ImportError as e:
-        print(f"\n❌ Could not import good_drone_controller: {e}")
-        print("\nMake sure good_drone_controller.py is in the same directory")
-        print("and all dependencies are installed:")
-        print("  pip install numpy dataclasses-json")
         return False
     except Exception as e:
-        print(f"\n❌ Error testing drone system: {e}")
+        print(f"\n Error testing drone system: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -116,7 +90,7 @@ def main():
     """Main function to build and render Lahore 3D model"""
     print("=" * 60)
     print("LAHORE 3D URBAN DEFENSE VISUALIZATION")
-    print("WITH GOOD DRONE DEFENSE SYSTEM")
+    print("WITH POST-MISSION MOVEMENT ANALYSIS")
     print("=" * 60)
 
     # Find JSON files
@@ -136,7 +110,7 @@ def main():
     else:
         print(f"\nFound {files_found} JSON file(s).")
 
-    # Step 1: Build 3D model
+    # Build 3D model
     print("\n" + "=" * 50)
     print("[1/3] Building 3D Model...")
     print("=" * 50)
@@ -144,15 +118,18 @@ def main():
     builder = LahoreModelBuilder()
     model = builder.build_complete_model()
 
-    # Step 2: Initialize 3D renderer
+    # Initialize 3D renderer
     print("\n" + "=" * 50)
     print("[2/3] Initializing 3D Visualization...")
     print("=" * 50)
 
+    renderer = None
+    post_mission_analyzer = None  # New variable for post-mission analysis
+
     try:
         renderer = Lahore3DRenderer(screen_width=1400, screen_height=900)
 
-        # Step 3: Initialize good drone defense system
+        # Initialize good drone defense system
         print("\n" + "=" * 50)
         print("[3/3] Initializing Defense Systems...")
         print("=" * 50)
@@ -161,91 +138,151 @@ def main():
         drone_init_success = renderer.initialize_good_drones(num_drones=4)
 
         if drone_init_success:
-            print("\n" + "=" * 50)
             print("✓ DEFENSE SYSTEMS READY")
-            print("=" * 50)
             print("Key Controls:")
             print("  D: Toggle good drones on/off")
             print("  M: Show drone status report (console)")
             print("  I: Reinitialize drones")
-            print("\nVisual Guide:")
+            print("Guide:")
             print("  Green spheres: Your defense drones")
             print("  Red/Orange spheres: Enemy threats")
             print("  Green pyramids: Defended assets")
             print("  Colored troughs: Urban canyons")
             print("=" * 50)
-        else:
-            print("\n" + "=" * 50)
-            print("⚠ Good drones not available")
-            print("=" * 50)
-            print("To enable good drone defense system:")
-            print("1. Make sure good_drone_controller.py is in same directory")
-            print("2. Install dependencies:")
-            print("   pip install numpy dataclasses-json")
-            print("3. Run test first:")
-            print("   Uncomment test_drone_system() in this file")
-            print("=" * 50)
 
-        # Display enhanced control guide
-        print("\n" + "=" * 50)
-        print("ENHANCED CONTROL SUMMARY:")
-        print("=" * 50)
+
+        print("POST-MISSION ANALYSIS SYSTEM")
+
+        if renderer and renderer.bad_drone_controller:
+            post_mission_analyzer = PostMissionAnalyzer()
+            post_mission_analyzer.enable_recording(renderer.bad_drone_controller)
+
+            print("Post-mission recording enabled")
+            print("All enemy movements will be recorded")
+            print("After simulation, analyze any enemy with:")
+            print("analyzer.analyze_enemy('Enemy_02')")
+        else:
+            print("Cannot enable post-mission analysis:")
+            print("Bad drone controller not available")
+
         print("Camera Controls:")
-        print("  Mouse Drag: Rotate camera")
-        print("  Scroll: Zoom in/out")
-        print("  Arrow Keys: Fine camera control")
-        print("  +/-: Zoom fine adjustment")
-        print("  R: Reset camera")
-        print("\nDisplay Toggles:")
-        print("  B: Toggle Buildings")
-        print("  C: Toggle Canyons")
-        print("  T: Toggle Threats (Enemies)")
-        print("  A: Toggle Assets")
-        print("  D: Toggle Good Drones")
-        print("  W: Wireframe Mode")
-        print("  G: Toggle Ground")
-        print("  X: Toggle Axes")
-        print("\nDrone Controls:")
-        print("  I: Initialize/Reinitialize Drones")
-        print("  M: Drone Status Report")
-        print("\nSystem:")
-        print("  ESC: Exit")
-        print("=" * 50)
+        print("Mouse Drag: Rotate camera")
+        print("Scroll: Zoom in/out")
+        print("Arrow Keys: Fine camera control")
+        print("+/-: Zoom fine adjustment")
+        print("R: Reset camera")
+        print("Display Toggles:")
+        print("B: Toggle Buildings")
+        print("C: Toggle Canyons")
+        print("T: Toggle Threats (Enemies)")
+        print("A: Toggle Assets")
+        print("D: Toggle Good Drones")
+        print("W: Wireframe Mode")
+        print("G: Toggle Ground")
+        print("X: Toggle Axes")
+        print("Drone Controls:")
+        print("I: Initialize/Reinitialize Drones")
+        print("M: Drone Status Report")
+        print("System:")
+        print("ESC: Exit")
 
         # Run the visualization
-        print("\nStarting visualization...")
+        print("\nStarting visualization")
         renderer.run(model)
 
     except Exception as e:
-        print(f"\n❌ Error during visualization: {e}")
+        print(f"Error during visualization: {e}")
         import traceback
         traceback.print_exc()
 
-        # Provide helpful installation instructions
-        print("\n" + "=" * 50)
-        print("TROUBLESHOOTING:")
-        print("=" * 50)
-        print("1. Install required packages:")
-        print("   pip install PyOpenGL PyOpenGL-accelerate")
-        print("\n2. For good drone system:")
-        print("   pip install numpy dataclasses-json")
-        print("\n3. Ensure JSON files are in correct location:")
-        print("   - In project root or JSON_files/ folder")
-        print("   - Required: building_data_3.1.1.json")
-        print("   - Optional: strategic_features_3.1.4.json")
-        print("   - Optional: lahore_3d_data.json")
-        print("\n4. Run test first (uncomment in code):")
-        print("   test_drone_system()")
-        print("=" * 50)
 
-    print("\n" + "=" * 60)
-    print("Visualization session ended.")
-    print("=" * 60)
+
+    finally:
+        print("\n" + "=" * 60)
+        print("POST-MISSION ANALYSIS")
+        print("=" * 60)
+
+        if post_mission_analyzer:
+            try:
+                if hasattr(post_mission_analyzer, 'enemy_history') and post_mission_analyzer.enemy_history:
+                    print("Enemies recorded during mission:")
+                    for enemy_id in post_mission_analyzer.enemy_history.keys():
+                        print(f"  - {enemy_id}")
+
+                    # Simple menu
+                    while True:
+                        print("POST-MISSION ANALYSIS MENU")
+                        print("-" * 40)
+                        print("1. Analyze specific enemy movement")
+                        print("2. Show simple report for all enemies")
+                        print("3. Exit analysis")
+
+                        choice = input("\nSelect option (1-3): ").strip()
+
+                        if choice == '1':
+                            enemy_id = input("Enter enemy ID to analyze (e.g., Enemy_01): ").strip()
+                            if enemy_id in post_mission_analyzer.enemy_history:
+                                print(f"Analyzing {enemy_id}...")
+                                post_mission_analyzer.analyze_enemy(enemy_id)
+                                print(f"Analysis complete for {enemy_id}")
+                                print("Returning to menu...")
+                            else:
+                                print(f" No data found for {enemy_id}")
+                                print(f"Available enemies: {list(post_mission_analyzer.enemy_history.keys())}")
+
+                        elif choice == '2':
+                            print("Simple report ")
+                            for enemy_id in post_mission_analyzer.enemy_history.keys():
+                                post_mission_analyzer.simple_report(enemy_id)
+                                print("-" * 40)
+
+                        elif choice == '3':
+                            print("\nExiting post-mission analysis")
+                            break
+
+                        else:
+                            print("\nInvalid choice. Please enter 1, 2, or 3.")
+                else:
+                    print("No enemy data recorded during mission")
+
+            except Exception as e:
+                print(f"\nError during post-mission analysis: {e}")
+                print("You can still analyze enemies manually:")
+                print("analyzer.analyze_enemy('Enemy_02')")
+
+        else:
+            print(" Post-mission analysis was not enabled")
+            print("To enable next time, ensure bad_drone_controller is available")
+
+        print("MISSION COMPLETE - SYSTEM SUMMARY")
+
+        try:
+            # Basic summary
+            if model:
+                print(f"\nModel Statistics:")
+                print(f"  Buildings: {len(model.buildings) if hasattr(model, 'buildings') else 0}")
+                print(f"  Canyons: {len(model.canyons) if hasattr(model, 'canyons') else 0}")
+                print(f"  Threats: {len(model.threats) if hasattr(model, 'threats') else 0}")
+                print(f"  Assets: {len(model.assets) if hasattr(model, 'assets') else 0}")
+
+            if renderer and renderer.good_drone_controller:
+                print(f"\nDrone System Performance:")
+                print(f"  Defense Drones: {len(renderer.good_drone_controller.drones)}")
+
+            if renderer and renderer.bad_drone_controller:
+                print(f"  Enemy Drones: {len(renderer.bad_drone_controller.enemies)}")
+
+            if post_mission_analyzer and hasattr(post_mission_analyzer, 'enemy_history'):
+                recorded_enemies = len(post_mission_analyzer.enemy_history)
+                print(f"\nPost-Mission Analysis:")
+                print(f"  Enemies recorded: {recorded_enemies}")
+                if recorded_enemies > 0:
+                    print("  To analyze: analyzer.analyze_enemy('Enemy_ID')")
+
+        except Exception as e:
+            print(f"Could not generate final summary: {e}")
+
 
 
 if __name__ == "__main__":
-    # Uncomment to test drone system first (recommended)
-    # test_drone_system()
-
-    # Run main visualization
     main()

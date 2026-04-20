@@ -9,12 +9,10 @@ import scipy.linalg
 
 @dataclass
 class IMMModel:
-    """Individual motion model for the IMM filter"""
     name: str
-    probability: float  # How likely this model is correct
-    process_noise: float  # How much uncertainty in motion
-    color: str  # For visualization
-
+    probability: float
+    process_noise: float
+    color: str
     # Model-specific parameters
     max_acceleration: float = 0.0
     prefers_canyons: bool = False
@@ -34,15 +32,11 @@ class TrackingSnapshot:
 
 
 class IMMUrbanTracker:
-    """
-    Interactive Multiple Model filter for urban target tracking
-    Uses multiple motion models and blends them based on urban context
-    """
 
     def __init__(self, urban_map_data=None):
         self.urban_map = urban_map_data or {}
 
-        # Define different motion models for urban environments
+        # different motion models for urban environments
         self.motion_models = [
             IMMModel(
                 name="Canyon_Follower",
@@ -73,26 +67,23 @@ class IMMUrbanTracker:
             )
         ]
 
-        # Tracking state - now using full state vector [x, y, vx, vy]
+        # Tracking state
         self.current_state = np.zeros(4)  # [x, y, vx, vy]
-        self.state_covariance = np.eye(4) * 10  # Full state covariance
+        self.state_covariance = np.eye(4) * 10
 
-        # History
+        #history
         self.tracking_history: List[TrackingSnapshot] = []
         self.time_step = 0.1
 
-        print("IMM Urban Tracker Initialized!")
         print(f"Models: {[model.name for model in self.motion_models]}")
 
     def load_previous_tracking_data(self, filename='urban_tracking_data.json'):
-        """Load data from previous topology-enhanced Kalman filter"""
-        print(f"Loading previous tracking data from {filename}...")
 
         try:
             with open(filename, 'r') as f:
                 data = json.load(f)
 
-            # Extract position history
+            #extract posision history
             positions = []
             urban_contexts = []
             velocities = []
@@ -121,14 +112,14 @@ class IMMUrbanTracker:
 
             return True
         except FileNotFoundError:
-            return "File not founfd. Please run TopologyEnhancedKalmanFilter.py first."
+            return " file not found"
 
     def analyze_urban_context(self, position: np.ndarray, timestamp: float) -> str:
-        """Determine what type of urban area we're in"""
-        if not hasattr(self, 'previous_contexts'):
+
+        if not hasattr(self, 'previous_contexts'): #determine what area it is in
             return "unknown"
 
-        # Use timestamp to get context from previous data
+        #get context from previous data using a timestamp
         time_idx = int(timestamp / self.time_step)
         if time_idx < len(self.previous_contexts):
             return self.previous_contexts[time_idx]
@@ -138,7 +129,7 @@ class IMMUrbanTracker:
     def predict_next_state(self, model: IMMModel, urban_context: str) -> Tuple[np.ndarray, np.ndarray]:
         """Predict next state using a specific motion model"""
 
-        # State transition matrix for constant velocity model
+        # transistion matrix for constant velocity model
         F = np.array([
             [1, 0, self.time_step, 0],
             [0, 1, 0, self.time_step],
@@ -146,42 +137,38 @@ class IMMUrbanTracker:
             [0, 0, 0, 1]
         ])
 
-        # Predict state
         predicted_state = F @ self.current_state
 
-        # Model-specific adjustments to process noise
         if model.prefers_canyons and urban_context == "canyon":
-            # Canyon followers move more predictably in canyons
             process_noise = model.process_noise * 0.5
         elif model.avoids_obstacles and urban_context == "obstacle":
-            # Obstacle dodgers are more maneuverable near obstacles
             process_noise = model.process_noise * 1.5
         else:
             process_noise = model.process_noise
 
-        # Process noise matrix
+        #noise matrix
         Q = np.eye(4) * process_noise
 
-        # Predict covariance
+        #Predict the covariance
         predicted_covariance = F @ self.state_covariance @ F.T + Q
 
         return predicted_state, predicted_covariance
 
     def update_model_probabilities(self, measurement: np.ndarray, urban_context: str):
-        """Update how likely each model is based on new measurement"""
+        #update the model based off new data
 
         likelihoods = []
 
         for i, model in enumerate(self.motion_models):
-            # Predict using this model
+            # Predict
             predicted_state, predicted_cov = self.predict_next_state(model, urban_context)
             predicted_pos = predicted_state[:2]  # Extract position only
 
-            # Calculate how well prediction matches measurement
+            #Calculate
             error = measurement - predicted_pos
             distance_error = np.linalg.norm(error)
 
-            # Model likelihood based on error and context suitability
+            #model  likelihood
             if (model.prefers_canyons and urban_context == "canyon") or \
                     (model.avoids_obstacles and urban_context == "obstacle") or \
                     (not model.prefers_canyons and urban_context == "open"):
@@ -192,29 +179,28 @@ class IMMUrbanTracker:
             likelihood = np.exp(-distance_error / 10) * context_bonus
             likelihoods.append(likelihood)
 
-        # Normalize likelihoods
+        # Normalize
         total_likelihood = sum(likelihoods)
         if total_likelihood > 0:
             likelihoods = [l / total_likelihood for l in likelihoods]
 
-        # Update model probabilities (simple blending)
+        # update model probabilities
         for i, model in enumerate(self.motion_models):
             model.probability = 0.7 * model.probability + 0.3 * likelihoods[i]
 
-        # Renormalize probabilities
+        # Renormalize
         total_prob = sum(model.probability for model in self.motion_models)
         for model in self.motion_models:
             model.probability /= total_prob
 
     def update_with_measurement(self, measurement: np.ndarray, timestamp: float):
-        """Main IMM filter update step"""
 
         urban_context = self.analyze_urban_context(measurement, timestamp)
 
-        # Update model probabilities based on new measurement
+        # Update model probabilities from new measurmnets
         self.update_model_probabilities(measurement, urban_context)
 
-        # Get weighted prediction from all models (IMM mixing step)
+        # get weighted prediction
         mixed_state = np.zeros(4)
         mixed_covariance = np.zeros((4, 4))
 
@@ -223,32 +209,25 @@ class IMMUrbanTracker:
             mixed_state += model.probability * pred_state
             mixed_covariance += model.probability * pred_cov
 
-        # Simple update (in full IMM this would be more complex with model-conditioned updates)
         innovation = measurement - mixed_state[:2]
         kalman_gain = 0.8  # Simplified gain
 
-        # Update position
-        self.current_state[:2] = mixed_state[:2] + kalman_gain * innovation
+        self.current_state[:2] = mixed_state[:2] + kalman_gain * innovation # update posistion
 
-        # Update velocity based on position change
+        #update velocity
         if len(self.tracking_history) > 0:
-            # Use previous estimated position to update velocity
+
             prev_position = np.array(self.tracking_history[-1].estimated_position)
             self.current_state[2:] = (measurement - prev_position) / self.time_step
         else:
-            # First measurement - use velocity from loaded data if available
             time_idx = int(timestamp / self.time_step)
             if hasattr(self, 'previous_velocities') and time_idx < len(self.previous_velocities):
                 self.current_state[2:] = self.previous_velocities[time_idx]
 
-        # Update covariance
         self.state_covariance = mixed_covariance * 0.9
-
-        # Find best model
         best_model_idx = np.argmax([model.probability for model in self.motion_models])
         best_model = self.motion_models[best_model_idx].name
 
-        # Save snapshot
         snapshot = TrackingSnapshot(
             timestamp=timestamp,
             true_position=measurement.tolist(),
@@ -265,18 +244,15 @@ class IMMUrbanTracker:
         return snapshot
 
     def run_imm_tracking(self):
-        """Run the complete IMM tracking simulation"""
-        print("\n=== Running IMM Urban Tracking ===")
-
         if not hasattr(self, 'previous_positions'):
             self.load_previous_tracking_data()
 
-        # Initialize with first position and velocity
+        #initialize
         self.current_state[:2] = self.previous_positions[0]
         if hasattr(self, 'previous_velocities'):
             self.current_state[2:] = self.previous_velocities[0]
 
-        # Create initial snapshot for time 0
+        #Create base snapshot
         initial_snapshot = TrackingSnapshot(
             timestamp=0.0,
             true_position=self.previous_positions[0].tolist(),
@@ -290,34 +266,30 @@ class IMMUrbanTracker:
         self.tracking_history.append(initial_snapshot)
 
         print("Tracking target through urban environment...")
-        print("Time | Position | Best Model | Urban Context")
-        print("-" * 50)
+        print("Time  Position  Best Model  Urban Context")
         print(
-            f"{0:4d} | ({initial_snapshot.estimated_position[0]:6.1f}, {initial_snapshot.estimated_position[1]:6.1f}) | "
-            f"{initial_snapshot.best_model:15} | {initial_snapshot.urban_context}")
+            f"{0:4d}  ({initial_snapshot.estimated_position[0]:6.1f}, {initial_snapshot.estimated_position[1]:6.1f})  "
+            f"{initial_snapshot.best_model:15}  {initial_snapshot.urban_context}")
 
         # Process remaining measurements
         for t in range(1, min(10, len(self.previous_positions))):  # Limit to 10 steps for demo
             measurement = self.previous_positions[t]
             snapshot = self.update_with_measurement(measurement, t * self.time_step)
 
-            print(f"{t:4d} | ({snapshot.estimated_position[0]:6.1f}, {snapshot.estimated_position[1]:6.1f}) | "
-                  f"{snapshot.best_model:15} | {snapshot.urban_context}")
+            print(f"{t:4d}  ({snapshot.estimated_position[0]:6.1f}, {snapshot.estimated_position[1]:6.1f})  "
+                  f"{snapshot.best_model:15}  {snapshot.urban_context}")
 
     def visualize_imm_performance(self):
-        """Create comprehensive visualization of IMM filter performance"""
         if len(self.tracking_history) < 2:
             print("Not enough tracking data for visualization")
             return None
 
-        print("\nGenerating IMM Performance Visualization...")
-
         fig = plt.figure(figsize=(16, 12))
 
-        # 1. Trajectory and Model Usage
+        #Trajectory and Model Usage
         ax1 = plt.subplot(2, 3, 1)
 
-        # Plot trajectory colored by best model
+        # plot trajectory
         positions = np.array([snapshot.estimated_position for snapshot in self.tracking_history])
         models = [snapshot.best_model for snapshot in self.tracking_history]
 
@@ -329,7 +301,6 @@ class IMMUrbanTracker:
                 ax1.scatter(positions[model_indices, 0], positions[model_indices, 1],
                             c=color, label=model_name, s=50, alpha=0.7)
 
-        # Plot true positions if available
         if hasattr(self, 'previous_positions'):
             true_positions = self.previous_positions[:len(self.tracking_history)]
             ax1.plot(true_positions[:, 0], true_positions[:, 1], 'k--', alpha=0.5, label='True Path')
@@ -340,7 +311,7 @@ class IMMUrbanTracker:
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
-        # 2. Model Probability Evolution
+        #Model Probability Evolution
         ax2 = plt.subplot(2, 3, 2)
 
         times = [snapshot.timestamp for snapshot in self.tracking_history]
@@ -359,7 +330,7 @@ class IMMUrbanTracker:
         ax2.grid(True, alpha=0.3)
         ax2.set_ylim(0, 1)
 
-        # 3. Urban Context Analysis
+        #urban Context Analysis
         ax3 = plt.subplot(2, 3, 3)
 
         contexts = [snapshot.urban_context for snapshot in self.tracking_history]
@@ -378,7 +349,7 @@ class IMMUrbanTracker:
         ax3.set_title('Urban Context Distribution')
         ax3.grid(True, alpha=0.3)
 
-        # 4. Position Uncertainty
+        #Position Uncertainty
         ax4 = plt.subplot(2, 3, 4)
 
         x_uncertainty = [snapshot.position_uncertainty[0] for snapshot in self.tracking_history]
@@ -395,10 +366,10 @@ class IMMUrbanTracker:
         ax4.legend()
         ax4.grid(True, alpha=0.3)
 
-        # 5. Model Performance by Urban Context
+        #Model Performance by Urban Context
         ax5 = plt.subplot(2, 3, 5)
 
-        # Calculate which model performs best in each context
+        #calculate best model in context
         context_model_performance = {}
         for context in set(contexts):
             context_snapshots = [s for s in self.tracking_history if s.urban_context == context]
@@ -409,7 +380,6 @@ class IMMUrbanTracker:
                     model_wins[model_name] = wins / len(context_snapshots)
                 context_model_performance[context] = model_wins
 
-        # Plot as stacked bars
         if context_model_performance:
             contexts_list = list(context_model_performance.keys())
             bottom = np.zeros(len(contexts_list))
@@ -425,11 +395,9 @@ class IMMUrbanTracker:
             ax5.legend()
             ax5.grid(True, alpha=0.3)
 
-        # 6. Summary Statistics
         ax6 = plt.subplot(2, 3, 6)
         ax6.axis('off')
 
-        # Calculate summary statistics
         total_steps = len(self.tracking_history)
         final_probs = [f"{model.name}: {model.probability:.3f}" for model in self.motion_models]
         avg_uncertainty = np.mean([np.sqrt(u[0] ** 2 + u[1] ** 2) for u in
@@ -444,7 +412,7 @@ class IMMUrbanTracker:
             f"Final Model Probabilities:\n"
             f"  {final_probs[0]}\n"
             f"  {final_probs[1]}\n"
-            f"  {final_probs[2]}\n\n"
+            f"  {final_probs[2]}\n"
             f"Average Position Uncertainty: {avg_uncertainty:.2f} m\n\n"
             f"Urban Context Breakdown:\n{context_breakdown}\n\n"
             f"Target Canyon Preference: {self.canyon_preference:.3f}"
@@ -463,8 +431,6 @@ class IMMUrbanTracker:
         return fig
 
     def export_imm_results(self, filename='imm_tracking_results_3.2.2.json'):
-        """Export IMM tracking results for analysis"""
-        print(f"\nExporting IMM results to {filename}...")
 
         export_data = {
             'tracking_summary': {
@@ -495,7 +461,7 @@ class IMMUrbanTracker:
             ]
         }
 
-        # Calculate context-based performance
+        #context-based performance
         contexts = set(snapshot.urban_context for snapshot in self.tracking_history)
         for context in contexts:
             context_snapshots = [s for s in self.tracking_history if s.urban_context == context]
@@ -513,35 +479,16 @@ class IMMUrbanTracker:
 
 
 def run_phase_3_2_2():
-    """
-    Run Phase 3.2.2: Interactive Multiple Model (IMM) Filter
-    """
-    print("=" * 60)
-    print("PHASE 3.2.2: Interactive Multiple Model (IMM) Filter")
-    print("=" * 60)
 
-    # Create and run IMM tracker
+    print("Interactive Multiple Model Filter")
+
     imm_tracker = IMMUrbanTracker()
-
-    # Load previous tracking data
     imm_tracker.load_previous_tracking_data()
-
-    # Run IMM tracking
     imm_tracker.run_imm_tracking()
-
-    # Generate visualizations
     imm_tracker.visualize_imm_performance()
-
-    # Export results
     results = imm_tracker.export_imm_results()
 
-    print("\n" + "=" * 60)
-    print("PHASE 3.2.2 COMPLETE!")
-    print("=" * 60)
-    print("KEY INSIGHTS:")
     print(f"• Uses {len(imm_tracker.motion_models)} different motion models")
-    print(f"• Adapts to urban context in real-time")
-    print(f"• Final model probabilities:")
     for model in imm_tracker.motion_models:
         print(f"  - {model.name}: {model.probability:.3f}")
     print(f"• Average position uncertainty: {results['tracking_summary']['average_uncertainty']:.2f} m")
